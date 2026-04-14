@@ -1,0 +1,36 @@
+# Generated output directories — never commit these
+model_weights/
+losses/
+logs/
+info/
+rank/
+fig/
+embeddings/
+
+# Python virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Dataset files (just in case any end up here)
+*.tar.gz
+*.zip
+streetview/
+splits/
+split_locations/
+lang/
+bingmap/
+
+# SLURM output logs
+*.out
+
+# OS files
+.DS_Store
+Thumbs.db
