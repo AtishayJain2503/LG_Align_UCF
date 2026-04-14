@@ -227,24 +227,18 @@ def main():
     # print(f"Trainable Parameters: {trainable_params:,}")
     
     # ---------------------------------------------------------------
-
-
-    optimizer = optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad],
-        lr=hypm.lr, weight_decay=0.0
-    )
-
-    warmup_epochs = hypm.warmup_epochs
-    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs
-    )
-    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=hypm.epochs - warmup_epochs, eta_min=1e-6
-    )
-    scheduler = torch.optim.lr_scheduler.SequentialLR(
-        optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_epochs]
-    )
+    # 2-Phase optimizer: Phase 1 trains only MLP heads at high LR.
+    # Phase 2 (epoch 10+) adds the unfrozen backbone at low LR.
     # ---------------------------------------------------------------
+    mlp_params = (
+        list(model.vis_L1.parameters()) + list(model.vis_L2.parameters()) +
+        list(model.vis_L3.parameters()) + list(model.vis_txt_L1.parameters()) +
+        list(model.vis_txt_L2.parameters()) + list(model.vis_txt_L3.parameters())
+    )
+    optimizer = optim.AdamW(mlp_params, lr=1e-3, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=hypm.epochs, eta_min=1e-5
+    )
 
 
     hypm.eval_size = val_data.shape[0]  

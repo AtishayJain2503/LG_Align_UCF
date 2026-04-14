@@ -136,6 +136,18 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
     
     for epoch in range(num_epochs):
         model.train()
+
+        # --- Phase 2: Unfreeze backbone at epoch 10 for joint fine-tuning ---
+        if epoch == 10:
+            print("\n--- Phase 2: Unfreezing CLIP backbone for joint fine-tuning ---\n")
+            for param in model.query.parameters():
+                param.requires_grad = True
+            # Add backbone to optimizer at a much lower LR than the projection heads
+            optimizer.add_param_group({
+                'params': [p for p in model.query.parameters() if p.requires_grad],
+                'lr': 1e-5,
+                'weight_decay': 1e-4
+            })
         
         if epoch >= 1 and (epoch % 3 == 0):
             hard_neg_indices = mine_hard_negatives(model, train_mining_loader, dev, top_k=10)

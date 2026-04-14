@@ -130,12 +130,11 @@ class CLIP_model(nn.Module):
 
 #-----------------------OG-ViT--------------------------
         self.query = getClipVisionModel()
-        # for param in self.query.parameters():
-        #     param.requires_grad = False
+        # Phase 1: Freeze backbone — only MLP heads train at high LR initially
+        for param in self.query.parameters():
+            param.requires_grad = False
 
-        self.ref = self.query
-        # for param in self.ref.parameters():
-        #     param.requires_grad = False
+        self.ref = self.query  # shared — freezing query also freezes ref
 
         self.text = getClipTextModel()
         # for param in self.text.parameters():
