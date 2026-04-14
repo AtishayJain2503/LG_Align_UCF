@@ -1,0 +1,21 @@
+
+Hyperparameter info: 2026-04-04 20:46:31.613126
+
+Message: T1 gpt-4o; ConCat, lang_with: sat, Test DB: CVUSA, Exhibit 3.1;
+Exp ID: 75349988
+Embedded dimension: 768
+Learning rate: 1e-05
+Batch Size: 20
+Loss Margin: 1
+Label_Smoothing: 0.5
+Epoch: 20
+Dataset: CVUSA
+Training Size: 35532
+Validation Size: 8884
+Model Name: openai/clip-vit-large-patch14
+Adapter_id: ybelkada/opt-350m-lora
+
+
+
+Trainable Parameters: 8,459,520
+

@@ -1,0 +1,312 @@
+import pandas as pd
+import torch
+from tqdm import tqdm
+import numpy as np
+import time
+from datetime import datetime
+from torch.utils.data import DataLoader
+from CVACT_dataset import CVACT_dataset_cropped
+from GAMa_dataset import GAMa_dataset_cropped
+from VIGOR_dataset import VIGOR_dataset_cropped
+from eval import predict, accuracy
+from torchvision import transforms
+from CVUSA_dataset import CVUSA_Dataset_Eval, CVUSA_dataset_cropped
+from eval import accuracy, predict
+from attributes import Configuration as hypm
+from helper_func import write_to_file, write_to_rank_file, create_neg_keys, create_neg_keys_2, create_neg_keys_3
+from torch.profiler import profile, ProfilerActivity
+
+import torch.nn.functional as F
+from torch.amp import autocast, GradScaler
+
+def mine_hard_negatives(model, loader, dev, top_k=10):
+    """Returns hard_neg_indices: LongTensor of shape [N]"""
+    model.eval()
+    q_feats, r_feats = [], []
+    with torch.no_grad():
+        for anchor, positive, negative, txt, idx in tqdm(loader, desc="Mining"):
+            anchor = anchor.to(dev)
+            positive = positive.to(dev)
+            with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
+                qf = model.get_vision_embeddings(imgs=anchor, isQ=True)
+                rf = model.get_vision_embeddings(imgs=positive, isQ=False)
+            q_feats.append(F.normalize(qf, dim=-1).cpu())
+            r_feats.append(F.normalize(rf, dim=-1).cpu())
+    
+    q_feats = torch.cat(q_feats)  # [N, D]
+    r_feats = torch.cat(r_feats)  # [N, D]
+    N = q_feats.shape[0]
+    
+    hard_neg_indices = torch.zeros(N, dtype=torch.long)
+    chunk = 1000
+    for i in range(0, N, chunk):
+        q_chunk = q_feats[i:i+chunk]          # [chunk, D]
+        sims = q_chunk @ r_feats.T            # [chunk, N]
+        # mask true positives (diagonal of full matrix, offset by i)
+        for j in range(q_chunk.shape[0]):
+            sims[j, i + j] = -float('inf')
+        # top-K hardest, pick one randomly
+        _, top_k_idx = torch.topk(sims, k=top_k, dim=1)  # [chunk, K]
+        rand = torch.randint(0, top_k, (q_chunk.shape[0],))
+        hard_neg_indices[i:i+chunk] = top_k_idx[torch.arange(q_chunk.shape[0]), rand]
+    
+    model.train()
+    return hard_neg_indices
+
+def time_stamp():
+    now = datetime.now()
+    print(f'\nDate: {now}\n')
+
+
+
+def train_step_eval(step=-1, mdl=None, dev='cpu' ):
+    mdl.eval()
+    print(f'\nTrain Step Eval: {step+1}\n')
+
+
+    transform = transforms.Compose([
+        # transforms.Resize((224, 224)),
+        transforms.RandomCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+                            std=[0.229, 0.224, 0.225]),
+    ])
+
+    if(hypm.eval_db=="CVUSA"):
+#--------------------------------CVUSA------------------------------------------
+        data_path = hypm.data_path #don't include the / at the end
+
+        val_data= pd.read_csv(f'{data_path}/splits/val-19zl.csv', header=None)
+        # val_data= pd.read_csv(f'{data_path}/splits/val-19zl_panos.csv', header=None)
+
+        val_ds = CVUSA_dataset_cropped(df = val_data, path=data_path, transform=transform, train=False, lang=hypm.lang)
+        val_loader = DataLoader(val_ds, batch_size=hypm.batch_size, shuffle=False)
+#--------------------------------CVACT------------------------------------------
+    elif(hypm.eval_db=="CVACT"):
+        data_path = hypm.data_path
+
+        val_data= pd.read_csv(f'{data_path}/splits/CVACT_sm_val.csv')
+        val_ds = CVACT_dataset_cropped(df = val_data, path=data_path, transform=transform, train=False, lang=hypm.lang)
+        val_loader = DataLoader(val_ds, batch_size=64, shuffle=False)
+#--------------------------------VIGOR------------------------------------------
+    elif(hypm.eval_db=="VIGOR"):
+        data_path = hypm.data_path
+
+        val_data= pd.read_csv(f'{data_path}/splits/VIGOR_test.csv')
+        val_ds = VIGOR_dataset_cropped(df = val_data, path=data_path, transform=transform, train=False, lang=hypm.lang)
+        val_loader = DataLoader(val_ds, batch_size=64, shuffle=False)
+#--------------------------------GAMa------------------------------------------
+    elif(hypm.eval_db=="GAMa"):
+        data_path = hypm.data_path
+
+        val_data= pd.read_csv(f'{data_path}/split/gama_test.csv')
+        val_ds = GAMa_dataset_cropped(df = val_data, path=data_path, transform=transform, train=False, lang=hypm.lang)
+        val_loader = DataLoader(val_ds, batch_size=64, shuffle=False)
+
+
+        print(f'\nNumber of Validation data: {val_data.shape[0]}')
+
+
+
+    print("\nExtract Features:")
+    # query_features, query_labels = predict(model=mdl, dataloader=val_loader_que, dev=dev, isQuery=True)
+    # reference_features, reference_labels = predict(model = mdl, dataloader=val_loader_ref, dev=dev, isQuery=False) 
+    query_features, reference_features, labels = predict(model=mdl, dataloader=val_loader, dev=dev, isQuery=True)
+
+
+    print("Compute Scores:")
+    r1 =  accuracy(query_features=query_features, reference_features=reference_features, query_labels=labels, topk=[1, 5, 10])
+    
+    write_to_file(expID=hypm.expID, msg=f'Train_eval_epoch: {step+1} => ', content=r1)
+    write_to_rank_file(expID=hypm.expID, step=step, row=r1)
+
+    print(r1)
+    # mdl.train()
+
+
+
+def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loader, num_epochs=10, dev='cpu'):
+    model.train()
+    scaler = GradScaler()
+
+    # wait before starting progress bar
+    time.sleep(0.1)
+
+    all_loses = []
+    
+    for epoch in range(num_epochs):
+        model.train()
+        
+        if epoch >= 1 and (epoch % 3 == 0):
+            hard_neg_indices = mine_hard_negatives(model, train_mining_loader, dev, top_k=10)
+            train_loader.dataset.update_hard_negatives(hard_neg_indices)
+            model.train()
+
+        running_loss = []
+        bar = tqdm(train_loader, total=len(train_loader))
+        for anchor, positive, hn_img, txt, idx in bar:
+            
+            optimizer.zero_grad()
+            
+            anchor = anchor.to(dev)
+            positive = positive.to(dev)
+            hn_img = hn_img.to(dev)
+
+            # anchor, positive, negative = anchor.to(torch.float16), positive.to(torch.float16), negative.to(torch.float16)
+
+            with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
+                anchor_embedding, positive_embedding, _ = model(q = anchor, r = positive, t = txt, isTrain = True, isQuery = True)
+                
+                with torch.no_grad():
+                    hn_raw = model.get_vision_embeddings(hn_img, isQ=False)
+                    if hypm.fusion_mode == 'none':
+                        hn_emb = model.vis_txt_L3(torch.relu(model.vis_txt_L2(torch.relu(model.vis_txt_L1(hn_raw)))))
+                    else:
+                        _, hn_emb, _ = model(q=anchor, r=hn_img, t=txt, isTrain=False, isQuery=True)
+
+                if(hypm.use_neg_text):
+                    neg_forward = hn_emb.unsqueeze(1) 
+                    neg_reverse = torch.empty((hn_emb.shape[0], 0, hn_emb.shape[-1]), device=dev) # No reverse distractors
+                else:
+                    if train_loader.dataset.hard_neg_indices is not None:
+                        neg_forward, neg_reverse = create_neg_keys_3(A=anchor_embedding, P=positive_embedding, NN=hn_emb)
+                    else:
+                        neg_forward, neg_reverse = create_neg_keys_2(A=anchor_embedding, P=positive_embedding)
+
+                loss = criterion(query=anchor_embedding, positive_key=positive_embedding, negative_keys_forward=neg_forward, negative_keys_reverse=neg_reverse)
+
+
+
+            # anchor_embedding, positive_embedding = model(q = anchor, r = positive, isTrain = True, isQuery = True)
+            # _, negative_embedding_combine = model(q = anchor, r = negative, isTrain = True, isQuery = True)
+            # loss  = criterion(anchor_embedding, positive_embedding, negative_embedding_combine)
+            # -----------------------------------------------------------------------------------------------------------
+            # with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
+            #     model(q = anchor, r = positive, t=txt, isTrain = False, isQuery = True)
+
+            # # Sum FLOPs from the profiler and convert to GFLOPS
+            # total_flops = sum([e.cpu_memory_usage for e in prof.key_averages()])
+            # gflops = total_flops / 1e9
+
+            # print(f"Estimated GFLOPS: {gflops:.4f}")
+            # with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
+            #     model(q = anchor, r = positive, t=txt, isTrain = False, isQuery = True)
+
+
+            # # Sum FLOPs and convert to GFLOPS
+            # total_flops = sum([e.cpu_memory_usage for e in prof.key_averages()])
+            # gflops = total_flops / 1e9
+
+            # print(f"Estimated GFLOPS: {gflops:.4f}")
+            # -----------------------------------------------------------------------------------------------------------
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            # total_loss += loss.item()
+            running_loss.append(loss.cpu().detach().numpy())
+            # print(f"Epoch {epoch+1}, Loss: {loss.item()}")
+
+        print(f"Epoch: {epoch+1}/{num_epochs} Loss: {np.mean(running_loss)}")
+        all_loses.append(np.mean(running_loss))
+
+        write_to_file(expID=hypm.expID, msg=f'Loss_on_epoch:{epoch+1}=>', content=np.mean(running_loss))
+        write_to_file(expID=hypm.expID, msg=f'LR_epoch:{epoch+1}=>', content=f'{scheduler.get_last_lr()[0]:.8f}')
+        
+        scheduler.step()
+
+        # df_loss[epoch, "Loss"] = loss.cpu().detach().numpy()
+        
+        # ---------------------Training Evaluation---------------------------
+        # if((epoch+1)%hypm.train_eval_per_epoch==0):
+        #     train_step_eval(step=epoch, mdl=model, dev=dev)
+        #     model.train()
+        # ------------------------------------------------------------------
+        info_filepath = f'info/info_{hypm.expID}.txt'
+        with open(info_filepath, 'a') as file:
+            file.write(f'\n**************Epoch: {epoch+1}**************\n')
+
+
+        # ------------------------------------------------------------------
+    
+        if hypm.save_weights:
+            torch.save(model, f'model_weights/{hypm.expID}/model_tr.pth')
+    
+    time_stamp()
+    
+    return all_loses
+
+# def train(model, criterion, optimizer, train_loader, num_epochs=10, dev='cpu'):
+#     model.train()
+#     epoch_loss = []
+
+
+#     time_stamp()
+#     for epoch in range(num_epochs):
+#         # total_loss = 0.0
+#         print(f'Epoch#{epoch}')
+#         running_loss = []
+#         for i, (anchor, positive, negative) in enumerate(tqdm(train_loader)):
+#             optimizer.zero_grad()
+#             anchor, positive, negative = anchor.to(dev), positive.to(dev), negative.to(dev)
+#             anchor_embedding = model(anchor, isQuery = True)
+#             positive_embedding = model(positive, isQuery = False)
+#             negative_embedding = model(negative, isQuery = False)
+#             loss = criterion(anchor_embedding, positive_embedding, negative_embedding)
+#             loss.backward()
+#             optimizer.step()
+#             # total_loss += loss.item()
+#             running_loss.append(loss.cpu().detach().numpy())
+#             # print(f"Epoch {epoch+1}, Loss: {loss.item()}")
+#         print(f"Epoch: {epoch+1}/{num_epochs} Loss: {np.mean(running_loss)}")
+#         epoch_loss.append(np.mean(running_loss))
+#         # df_loss[epoch, "Loss"] = loss.cpu().detach().numpy()
+    
+#     time_stamp()
+    
+#     return epoch_loss
+
+
+
+
+# only for HuggingFace CLIP
+
+# def train_step_eval(step=-1, query_features=None, reference_features=None, topk=[1,5,10] ):
+#     print(f'Train Step Eval: {step}')
+#     print("Compute Scores:")
+#     if(query_features is not None and reference_features is not None):
+#         N = query_features.shape[0]
+#         M = reference_features.shape[0]
+#         topk.append(M//100)
+#         results = np.zeros([len(topk)])
+#         # for CVUSA, CVACT
+#         query_features = query_features.cpu()
+#         reference_features = reference_features.cpu()
+        
+#         query_features = query_features.detach().numpy()
+#         reference_features = reference_features.detach().numpy()
+
+
+
+#         if N < 80000:
+#             query_features_norm = np.sqrt(np.sum((query_features**2), axis=1, keepdims=True))
+#             reference_features_norm = np.sqrt(np.sum((reference_features ** 2), axis=1, keepdims=True))
+#             similarity = np.matmul(query_features/query_features_norm, (reference_features/reference_features_norm).T)
+            
+#             # print(similarity)
+#             # save_tensor(var_name='similarity', var=similarity)
+#             for i in range(N):
+#                 # ranking = np.sum((similarity[i,:]>similarity[i,query_labels[i]])*1.)
+#                 ranking = np.sum((similarity[i,:]>similarity[i,i])*1.)
+
+
+#                 for j, k in enumerate(topk):
+#                     if ranking < k:
+#                         results[j] += 1.
+
+#         results = results/ query_features.shape[0] * 100.
+#         print('Percentage-top1:{}, top5:{}, top10:{}, top1%:{}'.format(results[0], results[1], results[2], results[-1]))
+#     else:
+#         print('problem with embedding')
+
