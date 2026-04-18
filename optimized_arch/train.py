@@ -8,10 +8,9 @@ from torch.utils.data import DataLoader
 from CVACT_dataset import CVACT_dataset_cropped
 from GAMa_dataset import GAMa_dataset_cropped
 from VIGOR_dataset import VIGOR_dataset_cropped
-from eval import predict, accuracy
+from eval import predict_embeddings, evaluate_fused
 from torchvision import transforms
 from CVUSA_dataset import CVUSA_Dataset_Eval, CVUSA_dataset_cropped
-from eval import accuracy, predict
 from attributes import Configuration as hypm
 from helper_func import write_to_file, write_to_rank_file, create_neg_keys, create_neg_keys_2, create_neg_keys_3
 from torch.profiler import profile, ProfilerActivity
@@ -109,13 +108,10 @@ def train_step_eval(step=-1, mdl=None, dev='cpu' ):
 
 
     print("\nExtract Features:")
-    # query_features, query_labels = predict(model=mdl, dataloader=val_loader_que, dev=dev, isQuery=True)
-    # reference_features, reference_labels = predict(model = mdl, dataloader=val_loader_ref, dev=dev, isQuery=False) 
-    query_features, reference_features, labels = predict(model=mdl, dataloader=val_loader, dev=dev, isQuery=True)
-
+    xqs, xrs, xts, ids = predict_embeddings(model=mdl, dataloader=val_loader, dev=dev)
 
     print("Compute Scores:")
-    r1 =  accuracy(query_features=query_features, reference_features=reference_features, query_labels=labels, topk=[1, 5, 10])
+    r1 = evaluate_fused(model=mdl, xqs=xqs, xrs=xrs, xts=xts, topk=[1, 5, 10])
     
     write_to_file(expID=hypm.expID, msg=f'Train_eval_epoch: {step+1} => ', content=r1)
     write_to_rank_file(expID=hypm.expID, step=step, row=r1)
