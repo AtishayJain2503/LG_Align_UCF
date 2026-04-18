@@ -20,7 +20,7 @@ from CVUSA_dataset import CVUSA_dataset_cropped, CVUSA_Dataset_Eval
 from custom_models import ResNet, VIT, CLIP_model
 from losses import Contrastive_loss, SoftTripletBiLoss, InfoNCE, InfoNCE_2
 from train import train
-from eval import predict, accuracy, calculate_scores
+from eval import predict, accuracy, calculate_scores, predict_embeddings, evaluate_fused
 import torch.nn.functional as F
 import copy
 import math
@@ -317,11 +317,11 @@ def main():
 
         print(f"Saved embeddings Ground and Satelllite")
 
-    print("\nExtract Features:")
-    query_features, reference_features, labels = predict(model=model, dataloader=val_loader, dev=hypm.device, isQuery=True)
+    print("\nExtract Features (Decoupled ViT):")
+    xqs, xrs, xts, ids = predict_embeddings(model=model, dataloader=val_loader, dev=hypm.device)
     
-    print("Compute Scores:")
-    r1 = accuracy(query_features=query_features, reference_features=reference_features, query_labels=labels, topk=[1, 5, 10])
+    print("Compute Scores (O(N^2) Evaluated in batch):")
+    r1 = evaluate_fused(model=model, xqs=xqs, xrs=xrs, xts=xts, topk=[1, 5, 10])
 
     # accuracy() already converts to percentages internally
     results = r1

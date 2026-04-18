@@ -227,166 +227,33 @@ class CLIP_model(nn.Module):
 
 
     def get_vision_embeddings(self, imgs, isQ=True):
-        # Preprocess the images
-        # temp_dic = self.processor(images=imgs, return_tensors="pt")
-
-        # Use the CLIP model to get vision embeddings
-        
-        # with torch.no_grad():
-        # #------------------------og-------------------------------------
         if isQ:
-            # hypm.gnd_embed.append(outputs.image_embeds.cpu())
-            if(hypm.use_vis_embed):
-                # startidx = hypm.batch_no*hypm.batch_size
-                # endidx = ((hypm.batch_no*hypm.batch_size)+hypm.batch_size)
-                # if(endidx>hypm.eval_size):
-                #     image_embeds = hypm.gnd_embed_pretrn[startidx:,:].to(hypm.device)
-                # else:
-                #     image_embeds = hypm.gnd_embed_pretrn[startidx:endidx,:].to(hypm.device)
-
-                # return image_embeds
-                return imgs
-            else:
-                outputs = self.query(imgs)
-
+            outputs = self.query(imgs)
         else:
-            # hypm.sat_embed.append(outputs.image_embeds.cpu())
-            if(hypm.use_vis_embed):
-                # startidx = hypm.batch_no*hypm.batch_size
-                # endidx = ((hypm.batch_no*hypm.batch_size)+hypm.batch_size)
-                # if(endidx>hypm.eval_size):
-                #     image_embeds = hypm.gnd_embed_pretrn[startidx:,:].to(hypm.device)
-                # else:
-                #     image_embeds = hypm.sat_embed_pretrn[startidx:endidx,:].to(hypm.device)
-                # return image_embeds
-                return imgs
-            else:
-                outputs = self.ref(imgs)
+            outputs = self.ref(imgs)
 
-
-
-        # last_hidden_state = outputs.last_hidden_state
-        # pooled_output = outputs.pooler_output  # pooled CLS states
         image_embeds = outputs.image_embeds
-
-        #-------------------------patch------------------
-        # if isQ:
-        #     outputs = self.query(imgs)
-        #     image_embeds = outputs.image_embeds
-
-        #     outputs_patch = self.query.vision_model.embeddings(imgs)
-        #     patch_only_embeddings = outputs_patch[:, 1:, :]
-        #     average_patch_embedding = patch_only_embeddings.mean(dim=1)
-
-        #     image_embeds = torch.cat((image_embeds, average_patch_embedding),1)
-        #     image_embeds = self.patch_temp_q(image_embeds)
- 
-        # else:
-        #     outputs = self.ref(imgs)
-        #     image_embeds = outputs.image_embeds
-
-        #     outputs_patch = self.ref.vision_model.embeddings(imgs)
-        #     patch_only_embeddings = outputs_patch[:, 1:, :]
-        #     average_patch_embedding = patch_only_embeddings.mean(dim=1)
-
-        #     image_embeds = torch.cat((image_embeds, average_patch_embedding),1)
-        #     image_embeds = self.patch_temp_r(image_embeds)
-
-        #--------------------------Res50----------------------------
-
-        # if isQ:
-        #     outputs = self.query(imgs)
- 
-        # else:
-        #     outputs = self.ref(imgs)
-        # image_embeds = outputs
-        # image_embeds = image_embeds.to(torch.float32) 
-
-        # #------------------------og-EVA-------------------------------------
-        # if isQ:
-        #     outputs = self.query(imgs)
- 
-        # else:
-        #     outputs = self.ref(imgs)
-        # image_embeds = outputs
-          
-        #-----------------------------------------------------------
-        
-        
-        
         return image_embeds
     
     def get_text_embeddings(self, txt):
-        #--------------------------OG----------------------------
         txt = self.tokenizer(txt, padding=True, truncation=True, return_tensors="pt", max_length=77)
         txt = txt.to(device=self.device)
         outputs = self.text(**txt)
-        text_embeds = outputs.text_embeds
-        #--------------------------Res50----------------------------
-        # txt = clip.tokenize(txt, context_length=77, truncate=True)
-        # txt = txt.to(device=self.device)
-        # outputs = self.text(txt)
-        # text_embeds = outputs
-        # text_embeds = text_embeds.to(torch.float32)           
-        #-----------------------------------------------------------
+        return outputs.text_embeds
 
-        return text_embeds
-
-    def get_projected_vision_embeddings(self, q, r, t=None):
+    def encode_candidates(self, q, r, t):
         xq = self.get_vision_embeddings(imgs=q, isQ=True)
         xr = self.get_vision_embeddings(imgs=r, isQ=False)
-        if hypm.fusion_mode == 'mlp':
-            if hypm.use_neg_text:
-                xt = self.get_text_embeddings(txt=t[0])
-            else:
-                xt = self.get_text_embeddings(txt=t)
-            xlt = torch.cat((xr, xt), dim=1)
-            xlt = self.mlp_txt(xlt)
-            xlt = self.vis_txt_L1(xlt)
-            xlt = torch.relu(xlt)
-            xlt = self.vis_txt_L2(xlt)
-            xlt = torch.relu(xlt)
-            xlt = self.vis_txt_L3(xlt)
-            
-            xq = self.vis_L1(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L2(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L3(xq)
-            return xq, xlt
-        elif hypm.fusion_mode == 'cross_attn':
-            raise NotImplementedError('Patch-level cross-attention is not yet implemented.')
-        else:
-            xr = self.vis_txt_L1(xr)
-            xr = torch.relu(xr)
-            xr = self.vis_txt_L2(xr)
-            xr = torch.relu(xr)
-            xr = self.vis_txt_L3(xr)
-            
-            xq = self.vis_L1(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L2(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L3(xq)
-            return xq, xr
-
-    def forward(self, q, r, t, isTrain = True, isQuery = True):
-        xq = self.get_vision_embeddings(imgs = q, isQ = True )
-        xr = self.get_vision_embeddings(imgs = r, isQ = False )
         
-        if hypm.fusion_mode != 'none':
-            if(hypm.use_neg_text):
-                xt = self.get_text_embeddings(txt = t[0])
-                xt_n = self.get_text_embeddings(txt = t[1])
-            else:
-                xt = self.get_text_embeddings(txt = t)
-                # shuffled_indices = torch.randperm(xt.size(0))
-                # xt_n = xt[shuffled_indices]
-
-        # xq = self.vis_gnd_L1(xq)
-        # xr = self.vis_sat_L1(xr)
-        # xt = self.txt_gnd_L1(xt)
-
+        if hypm.use_neg_text:
+            xt = self.get_text_embeddings(txt=t[0])
+            xt_n = self.get_text_embeddings(txt=t[1])
+            return xq, xr, (xt, xt_n)
+        else:
+            xt = self.get_text_embeddings(txt=t)
+            return xq, xr, xt
+            
+    def fuse_and_project(self, xq, xr, xt):
         if hypm.fusion_mode == 'mlp':        # A4 — MLP concat
             xlt = torch.cat((xr, xt), dim=1)
             xlt = self.mlp_txt(xlt)
@@ -395,47 +262,41 @@ class CLIP_model(nn.Module):
             xlt = self.vis_txt_L2(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L3(xlt)
-            xq = self.vis_L1(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L2(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L3(xq)
-            return xq, xlt, -1
+            
+            xq_proj = self.vis_L1(xq)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L2(xq_proj)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L3(xq_proj)
+            return xq_proj, xlt, -1
 
         elif hypm.fusion_mode == 'cross_attn':   # A5 — cross-attention
-            raise NotImplementedError('Patch-level cross-attention is not yet implemented. Please drop A5 for now and run only A3 and A4.')
+            raise NotImplementedError('Patch-level cross-attention is not yet implemented.')
 
         else:                                    # A3 — vision only
-            xr = self.vis_txt_L1(xr)
-            xr = torch.relu(xr)
-            xr = self.vis_txt_L2(xr)
-            xr = torch.relu(xr)
-            xr = self.vis_txt_L3(xr)
-            xq = self.vis_L1(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L2(xq)
-            xq = torch.relu(xq)
-            xq = self.vis_L3(xq)
-            return xq, xr, -1
+            xr_proj = self.vis_txt_L1(xr)
+            xr_proj = torch.relu(xr_proj)
+            xr_proj = self.vis_txt_L2(xr_proj)
+            xr_proj = torch.relu(xr_proj)
+            xr_proj = self.vis_txt_L3(xr_proj)
+            
+            xq_proj = self.vis_L1(xq)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L2(xq_proj)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L3(xq_proj)
+            return xq_proj, xr_proj, -1
 
-
-        # xr = self.ref_fc1(xr)
-        # xr = torch.relu(xr)
-        # xr = self.ref_fc2(xr)
-        # xr = torch.sigmoid(xr)
+    def forward(self, q, r, t, isTrain=True, isQuery=True):
+        xq, xr, xt_pack = self.encode_candidates(q, r, t)
         
-        # if isTrain:
-        #     # return xq, xr
-        #     return xq, xlt
-            # return self.query.encode_image(q), self.ref.encode_image(r)
-        # else:
-        #     return xq, xlt
-            # if isQuery:
-            #     return xq
-            #     # return self.query.encode_image(q)
-            # else:
-            #     return xrt
-            #     # return self.ref.encode_image(r)
+        if hypm.use_neg_text:
+            xt = xt_pack[0]
+            xt_n = xt_pack[1]
+        else:
+            xt = xt_pack
+            
+        return self.fuse_and_project(xq, xr, xt)
 
 
 
