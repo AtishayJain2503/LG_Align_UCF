@@ -20,7 +20,7 @@ from CVUSA_dataset import CVUSA_dataset_cropped, CVUSA_Dataset_Eval
 from custom_models import ResNet, VIT, CLIP_model
 from losses import Contrastive_loss, SoftTripletBiLoss, InfoNCE, InfoNCE_2
 from train import train
-from eval import predict, accuracy, calculate_scores, predict_embeddings, evaluate_fused
+from eval import predict_embeddings, evaluate_fused
 import torch.nn.functional as F
 import copy
 import math
