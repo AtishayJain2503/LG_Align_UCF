@@ -37,11 +37,11 @@ class Configuration:
 
     # Eval
     save_vis_embed = False
-    use_vis_embed = False
+    use_vis_embed = True
     gnd_embed = []
     sat_embed = []
-    # gnd_embed_pretrn = torch.load("embeddings/clip_cvusa_gnd.pt")
-    # sat_embed_pretrn = torch.load("embeddings/clip_cvusa_sat.pt")
+    gnd_embed_pretrn = torch.load("embeddings/clip_cvusa_gnd.pt")
+    sat_embed_pretrn = torch.load("embeddings/clip_cvusa_sat.pt")
     batch_no = 0
     eval_size = -1
 
