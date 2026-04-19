@@ -67,7 +67,7 @@ class InfoNCE(nn.Module):
     
 
 class InfoNCE_2(torch.nn.Module):
-    def __init__(self, temperature=0.1):
+    def __init__(self, temperature=0.07):
         super(InfoNCE_2, self).__init__()
         self.temperature = temperature
 

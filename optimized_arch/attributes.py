@@ -28,11 +28,11 @@ class Configuration:
 
 
     # Training
-    epochs: int = 50
+    epochs: int = 20
     lr = 0.00001
     batch_size: int = 64
-    fusion_mode: str = 'none'   # 'none' = A3, 'mlp' = A4, 'cross_attn' = A5
-    lang_with: str = 'None'     # keep existing — set to 'sat' when fusion_mode != 'none'
+    fusion_mode: str = 'mlp'    # 'none'=vision only, 'mlp'=concat+MLP (LGAlign), 'cross_attn'=A5
+    lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True
     warmup_epochs = 2

@@ -134,7 +134,10 @@ class CLIP_model(nn.Module):
         for param in self.query.parameters():
             param.requires_grad = False
 
-        self.ref = self.query  # shared — freezing query also freezes ref
+        # Separate encoder for satellite — different domain, independent fine-tuning
+        self.ref = getClipVisionModel()
+        for param in self.ref.parameters():
+            param.requires_grad = False
 
         self.text = getClipTextModel()
         # for param in self.text.parameters():
@@ -234,6 +237,31 @@ class CLIP_model(nn.Module):
 
         image_embeds = outputs.image_embeds
         return image_embeds
+
+    def project_query(self, xq):
+        """Project ground-image embeddings through the query MLP head."""
+        xq = self.vis_L1(xq)
+        xq = torch.relu(xq)
+        xq = self.vis_L2(xq)
+        xq = torch.relu(xq)
+        xq = self.vis_L3(xq)
+        return xq
+
+    def fuse_satellite(self, xr, xt=None):
+        """Fuse satellite visual + text embeddings through the satellite MLP head.
+        Each satellite is paired with its OWN text (not the query's text).
+        """
+        if hypm.fusion_mode == 'mlp' and xt is not None:
+            xlt = torch.cat((xr, xt), dim=1)   # [B, vis+txt]
+            xlt = self.mlp_txt(xlt)             # [B, D]
+        else:
+            xlt = xr
+        xlt = self.vis_txt_L1(xlt)
+        xlt = torch.relu(xlt)
+        xlt = self.vis_txt_L2(xlt)
+        xlt = torch.relu(xlt)
+        xlt = self.vis_txt_L3(xlt)
+        return xlt
     
     def get_text_embeddings(self, txt):
         txt = self.tokenizer(txt, padding=True, truncation=True, return_tensors="pt", max_length=77)

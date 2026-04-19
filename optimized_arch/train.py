@@ -133,15 +133,18 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
     for epoch in range(num_epochs):
         model.train()
 
-        # --- Phase 2: Unfreeze backbone at epoch 20 for joint fine-tuning ---
-        if epoch == 20:
+        # --- Phase 2: Unfreeze backbone at epoch 10 for joint fine-tuning ---
+        if epoch == 10:
             print("\n--- Phase 2: Unfreezing CLIP backbone for joint fine-tuning ---\n")
             for param in model.query.parameters():
                 param.requires_grad = True
-            # Add backbone to optimizer at a much lower LR than the projection heads
+            for param in model.ref.parameters():
+                param.requires_grad = True
+            # Add both backbones at a much lower LR than the projection heads
+            backbone_params = [p for p in list(model.query.parameters()) + list(model.ref.parameters()) if p.requires_grad]
             optimizer.add_param_group({
-                'params': [p for p in model.query.parameters() if p.requires_grad],
-                'lr': 1e-5,
+                'params': backbone_params,
+                'lr': 1e-6,
                 'weight_decay': 1e-4
             })
         
