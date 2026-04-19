@@ -234,33 +234,20 @@ class CLIP_model(nn.Module):
         # with torch.no_grad():
         # #------------------------og-------------------------------------
         if isQ:
-            # hypm.gnd_embed.append(outputs.image_embeds.cpu())
             if(hypm.use_vis_embed):
-                # startidx = hypm.batch_no*hypm.batch_size
-                # endidx = ((hypm.batch_no*hypm.batch_size)+hypm.batch_size)
-                # if(endidx>hypm.eval_size):
-                #     image_embeds = hypm.gnd_embed_pretrn[startidx:,:].to(hypm.device)
-                # else:
-                #     image_embeds = hypm.gnd_embed_pretrn[startidx:endidx,:].to(hypm.device)
-
-                # return image_embeds
                 return imgs
             else:
                 outputs = self.query(imgs)
+                if hypm.save_vis_embed:
+                    hypm.gnd_embed.append(outputs.image_embeds.cpu().detach())
 
         else:
-            # hypm.sat_embed.append(outputs.image_embeds.cpu())
             if(hypm.use_vis_embed):
-                # startidx = hypm.batch_no*hypm.batch_size
-                # endidx = ((hypm.batch_no*hypm.batch_size)+hypm.batch_size)
-                # if(endidx>hypm.eval_size):
-                #     image_embeds = hypm.gnd_embed_pretrn[startidx:,:].to(hypm.device)
-                # else:
-                #     image_embeds = hypm.sat_embed_pretrn[startidx:endidx,:].to(hypm.device)
-                # return image_embeds
                 return imgs
             else:
                 outputs = self.ref(imgs)
+                if hypm.save_vis_embed:
+                    hypm.sat_embed.append(outputs.image_embeds.cpu().detach())
 
 
 
