@@ -280,10 +280,21 @@ def main():
 
     print("Training Start")
     all_loses = train(model, criterion, optimizer, scheduler, train_loader, train_mining_loader, num_epochs=hypm.epochs, dev=hypm.device)
-    df_loss = pd.DataFrame({'Loss': all_loses})
-    df_loss.to_csv(f'losses/losses_{hypm.expID}.csv')
+    # Save model immediately after training - before any disk-full writes can crash us
+    if hypm.save_weights:
+        torch.save(model, f'model_weights/{hypm.expID}/model_tr.pth')
+        print(f'Model saved to model_weights/{hypm.expID}/model_tr.pth')
 
-    write_to_file(expID=hypm.expID, msg=f'End of training: ', content=datetime.now())
+    df_loss = pd.DataFrame({'Loss': all_loses})
+    try:
+        df_loss.to_csv(f'losses/losses_{hypm.expID}.csv')
+    except OSError as e:
+        print(f'[WARNING] Could not save loss CSV: {e}')
+
+    try:
+        write_to_file(expID=hypm.expID, msg=f'End of training: ', content=datetime.now())
+    except Exception:
+        pass
     # ***********************************************************************************************
 
 
@@ -331,8 +342,9 @@ def main():
 
 
 
-    if hypm.save_weights:
-        torch.save(model, f'model_weights/{hypm.expID}/model_tr.pth')
+    # Model already saved right after training above
+    # if hypm.save_weights:
+    #     torch.save(model, f'model_weights/{hypm.expID}/model_tr.pth')
     
 
 
