@@ -28,7 +28,7 @@ class Configuration:
 
 
     # Training
-    epochs: int = 20
+    epochs: int = 50
     lr = 0.00001
     batch_size: int = 64
     fusion_mode: str = 'none'   # 'none' = A3, 'mlp' = A4, 'cross_attn' = A5
