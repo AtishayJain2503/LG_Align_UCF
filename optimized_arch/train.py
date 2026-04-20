@@ -242,7 +242,7 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
         # ------------------------------------------------------------------
     
         if hypm.save_weights:
-            torch.save(model, f'model_weights/{hypm.expID}/model_tr.pth')
+            torch.save(model.state_dict(), f'model_weights/{hypm.expID}/model_tr.pth')
     
     time_stamp()
     
