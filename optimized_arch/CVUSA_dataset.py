@@ -13,6 +13,45 @@ import torchvision.transforms.functional as TF
 import random
 from transformers import CLIPProcessor, AutoProcessor, AutoTokenizer
 from attributes import Configuration as hypm
+import torch.nn.functional as F
+
+
+def fov_crop_pano(img_pil, fov_deg=90, zero_pad=True):
+    """Extract a random-azimuth FoV crop from an equirectangular panorama.
+
+    Args:
+        img_pil: PIL Image, full equirectangular panorama (W = 2*H expected)
+        fov_deg: horizontal field of view in degrees (70–360)
+        zero_pad: if True, embed crop in a zero canvas at its azimuth position
+                  so CLIP positional encodings see correct spatial context.
+    Returns:
+        PIL Image ready for the CLIP processor.
+    """
+    img = TF.to_tensor(img_pil)  # [3, H, W]
+    _, H, W = img.shape
+
+    crop_w = max(1, int(W * fov_deg / 360.0))
+    # Random starting azimuth
+    start = random.randint(0, W - 1)
+
+    # Seamless roll-wrap: move panorama so crop starts at 0, then slice
+    rolled = torch.roll(img, -start, dims=2)  # [3, H, W]
+    crop = rolled[:, :, :crop_w]              # [3, H, crop_w]
+
+    if zero_pad:
+        # Place crop back into a zero canvas at its original azimuth position
+        canvas = torch.zeros_like(img)        # [3, H, W]
+        end = min(start + crop_w, W)
+        canvas[:, :, start:end] = crop[:, :, :(end - start)]
+        # If crop wraps around the panorama boundary, handle the tail
+        if start + crop_w > W:
+            tail = (start + crop_w) - W
+            canvas[:, :, :tail] = crop[:, :, (end - start):]
+        out = TF.to_pil_image(canvas)
+    else:
+        out = TF.to_pil_image(crop)
+
+    return out
 
 
 
@@ -99,16 +138,26 @@ class CVUSA_dataset_cropped(Dataset):
             positive_img = jitter(positive_img)
             hn_img = jitter(hn_img)
 
-        anchor_img = self.processor(images=anchor_img, return_tensors="pt").pixel_values.squeeze(0)
+        # ------- Upgrade #2 + #3: FoV Crop with optional zero-padding -------
+        if self.is_train and hypm.use_fov_aug:
+            # random FoV between 70° and 360°
+            fov1 = random.uniform(70, 360)
+            fov2 = random.uniform(70, 360)  # second crop for ConGeo loss
+            anchor_pil_1 = fov_crop_pano(anchor_img, fov_deg=fov1, zero_pad=hypm.use_zero_padding)
+            anchor_pil_2 = fov_crop_pano(anchor_img, fov_deg=fov2, zero_pad=hypm.use_zero_padding)
+        else:
+            anchor_pil_1 = anchor_img
+            anchor_pil_2 = anchor_img  # same crop at eval/no-aug time
+
+        anchor_img_1 = self.processor(images=anchor_pil_1, return_tensors="pt").pixel_values.squeeze(0)
+        anchor_img_2 = self.processor(images=anchor_pil_2, return_tensors="pt").pixel_values.squeeze(0)
         positive_img = self.processor(images=positive_img, return_tensors="pt").pixel_values.squeeze(0)
         negative_img = self.processor(images=hn_img, return_tensors="pt").pixel_values.squeeze(0)
 
-
-
         if(hypm.use_neg_text):
-            return anchor_img, positive_img, negative_img, [anchor_text, anchor_text_neg], self.data_csv.idx[item]
+            return anchor_img_1, anchor_img_2, positive_img, negative_img, [anchor_text, anchor_text_neg], self.data_csv.idx[item]
         else:
-            return anchor_img, positive_img, negative_img, anchor_text, self.data_csv.idx[item]
+            return anchor_img_1, anchor_img_2, positive_img, negative_img, anchor_text, self.data_csv.idx[item]
 
     
 

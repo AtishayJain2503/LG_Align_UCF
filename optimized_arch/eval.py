@@ -21,7 +21,7 @@ def predict_embeddings(model, dataloader, dev=torch.device('cpu')):
 
     xqs, xrs_pooled, xrs_seq, xts, ids = [], [], [], [], []
     with torch.no_grad():
-        for anchor, positive, negative, txt, idx in tqdm(dataloader, total=len(dataloader), desc="ViT Feature Extraction"):
+        for anchor, anchor2, positive, negative, txt, idx in tqdm(dataloader, total=len(dataloader), desc="ViT Feature Extraction"):
             ids.append(idx)
             anchor, positive = anchor.to(dev), positive.to(dev)
 

@@ -23,7 +23,7 @@ def mine_hard_negatives(model, loader, dev, top_k=10):
     model.eval()
     q_feats, r_feats = [], []
     with torch.no_grad():
-        for anchor, positive, negative, txt, idx in tqdm(loader, desc="Mining"):
+        for anchor, anchor2, positive, negative, txt, idx in tqdm(loader, desc="Mining"):
             anchor = anchor.to(dev)
             positive = positive.to(dev)
             with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
@@ -150,18 +150,35 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
 
         running_loss = []
         bar = tqdm(train_loader, total=len(train_loader))
-        for anchor, positive, hn_img, txt, idx in bar:
+        for anchor, anchor2, positive, hn_img, txt, idx in bar:
             
             optimizer.zero_grad()
             
-            anchor = anchor.to(dev)
+            anchor  = anchor.to(dev)
+            anchor2 = anchor2.to(dev)
             positive = positive.to(dev)
             hn_img = hn_img.to(dev)
 
             # anchor, positive, negative = anchor.to(torch.float16), positive.to(torch.float16), negative.to(torch.float16)
 
             with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
-                anchor_embedding, positive_embedding, _ = model(q = anchor, r = positive, t = txt, isTrain = True, isQuery = True)
+                anchor_embedding, positive_embedding, _ = model(q=anchor, r=positive, t=txt, isTrain=True, isQuery=True)
+                
+                # --- Upgrade #1: ConGeo self-supervised ground-ground loss ---
+                if hypm.use_congeo_loss:
+                    anchor2_embedding = model.project_query(
+                        model.get_vision_embeddings(anchor2, isQ=True)
+                    )
+                    a1 = F.normalize(anchor_embedding, p=2, dim=1)
+                    a2 = F.normalize(anchor2_embedding, p=2, dim=1)
+                    logits_cg = a1 @ a2.T / 0.07
+                    labels_cg = torch.arange(a1.shape[0], device=dev)
+                    congeo_loss = (
+                        F.cross_entropy(logits_cg, labels_cg) +
+                        F.cross_entropy(logits_cg.T, labels_cg)
+                    ) * 0.5
+                else:
+                    congeo_loss = 0.0
                 
                 with torch.no_grad():
                     return_seq = (hypm.fusion_mode == 'qformer_patch')
@@ -187,6 +204,7 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                         neg_forward, neg_reverse = create_neg_keys_2(A=anchor_embedding, P=positive_embedding)
 
                 loss = criterion(query=anchor_embedding, positive_key=positive_embedding, negative_keys_forward=neg_forward, negative_keys_reverse=neg_reverse)
+                loss = loss + hypm.congeo_weight * congeo_loss
 
 
 

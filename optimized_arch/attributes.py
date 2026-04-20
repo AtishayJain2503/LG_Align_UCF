@@ -37,6 +37,12 @@ class Configuration:
     use_mixed_precision = True
     warmup_epochs = 2
 
+    # Augmentation (ConGeo upgrades)
+    use_fov_aug = True          # Upgrade #2: random FoV crop 70°–360°
+    use_zero_padding = True     # Upgrade #3: zero-pad crop into 360° canvas before resize
+    use_congeo_loss = True      # Upgrade #1: ConGeo self-supervised ground-ground loss
+    congeo_weight = 0.1         # weight for ConGeo auxiliary loss
+
     # Eval
     save_vis_embed = False
     use_vis_embed = False
