@@ -52,6 +52,11 @@ def evaluate_fast(query_features, reference_features, topk=[1, 5, 10]):
     print("Computing O(N^2) similarity matrix...")
     similarity = np.matmul(q_feat, r_feat.T)
     
+    print("\n--- SANITY CHECK FOR MODEL COLLAPSE ---")
+    print(f"Variance of Query Embeddings: {np.var(q_feat):.8f}")
+    print(f"Variance of Ref Embeddings:   {np.var(r_feat):.8f}")
+    print(f"Sample similarity values [0, 0:5]: {similarity[0, 0:5]}")
+    
     for i in tqdm(range(N), desc="Ranking"):
         # similarity[i, i] is the correct match in CVUSA
         ranking = np.sum((similarity[i, :] > similarity[i, i]) * 1.0)
