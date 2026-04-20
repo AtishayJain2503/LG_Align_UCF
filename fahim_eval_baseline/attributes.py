@@ -8,7 +8,7 @@ from helper_func import get_rand_id
 class Configuration:
     # Device
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    cuda_set_device = 1
+    cuda_set_device = 0  # single-GPU node — always device 0
 
     # Model
     model_name: str = '--'
@@ -17,7 +17,7 @@ class Configuration:
 
     expID = -1
     embed_dim: int = 768 #CLS:512 or 768, patch:1024, 
-    save_weights = False
+    save_weights = True
    
     # Adapters
     v_adapter_id = "ybelkada/opt-350m-lora"
@@ -30,7 +30,7 @@ class Configuration:
     # Training
     epochs: int = 20
     lr = 0.00001
-    batch_size: int = 20
+    batch_size: int = 32
     lang_with: str = 'sat' # 'sat' or 'None'
     train_eval_per_epoch = 2
     use_mixed_precision = True

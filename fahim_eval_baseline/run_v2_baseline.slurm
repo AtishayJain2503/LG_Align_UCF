@@ -15,6 +15,12 @@ date
 
 module load python/python-3.11.4-gcc-12.2.0
 
+# Point to the shared HF cache from optimized_arch (models already downloaded there)
+# This avoids re-downloading and the HuggingFace 429 rate-limit errors
+export HF_HOME="$HOME/LG_Align_UCF/optimized_arch/.cache/huggingface"
+export TRANSFORMERS_CACHE="$HF_HOME/hub"
+export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
+
 cd $SLURM_SUBMIT_DIR
 
 # ── Reuse the already-working venv from optimized_arch ──────────────────────

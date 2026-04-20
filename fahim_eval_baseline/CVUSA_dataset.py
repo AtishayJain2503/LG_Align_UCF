@@ -32,14 +32,14 @@ class CVUSA_dataset_cropped(Dataset):
         self.data_csv["idx"] = self.data_csv[0].map(lambda x : int(x.split("/")[-1].split(".")[0]))
 
         if (self.is_train):
-            self.T_lang = pd.read_csv(f'{self.path}/lang/{lang}_train-19zl.csv')
+            self.T_lang = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_train-19zl.csv')
             if(hypm.use_neg_text):
-                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/{lang}_train-19zl_90_neg.csv')
+                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_train-19zl_90_neg.csv')
 
         else:
-            self.T_lang = pd.read_csv(f'{self.path}/lang/{lang}_val-19zl.csv')
+            self.T_lang = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_val-19zl.csv')
             if(hypm.use_neg_text):
-                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/{lang}_val-19zl_90_neg.csv')
+                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_val-19zl_90_neg.csv')
 
         
         if (TV):
@@ -157,17 +157,17 @@ class CVUSA_Dataset_Eval(Dataset):
         self.data_csv["idx"] = self.data_csv[0].map(lambda x : int(x.split("/")[-1].split(".")[0]))
 
         if (self.is_train):
-            self.T_lang = pd.read_csv(f'{self.path}/lang/{lang}_train-19zl.csv')
+            self.T_lang = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_train-19zl.csv')
             self.CP = pd.read_csv(f'{self.path}/streetview/crp_pos90/T1_train_c_pix_pos.csv')
 
             if(hypm.use_neg_text):
-                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/{lang}_train-19zl_90_neg.csv')
+                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_train-19zl_90_neg.csv')
 
         else:
-            self.T_lang = pd.read_csv(f'{self.path}/lang/{lang}_val-19zl.csv')
+            self.T_lang = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_val-19zl.csv')
             self.CP = pd.read_csv(f'{self.path}/streetview/crp_pos90/T1_val_c_pix_pos.csv')
             if(hypm.use_neg_text):
-                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/{lang}_val-19zl_90_neg.csv')
+                self.T_lang_neg = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_val-19zl_90_neg.csv')
 
         
 
