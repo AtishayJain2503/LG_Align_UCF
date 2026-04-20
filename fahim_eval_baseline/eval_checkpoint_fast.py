@@ -10,7 +10,7 @@ transform = transforms.Compose([
     transforms.Resize((224, 240)),
 ])
 from attributes import Configuration as hypm
-from CVUSA_dataset import CVUSA_Dataset_Eval
+from CVUSA_dataset import CVUSA_dataset_cropped
 from tqdm import tqdm
 import time
 import os
@@ -80,8 +80,7 @@ def main():
     data_path = hypm.data_path
     val_df = pd.read_csv(f'{data_path}/splits/val-19zl.csv', header=None)
     
-    # We load q_item=-1 to get ALL items sequentially without repeating 8884 times
-    val_dataset = CVUSA_Dataset_Eval(df=val_df, path=data_path, transform=transform, train=False, lang=hypm.lang, q_item=-1)
+    val_dataset = CVUSA_dataset_cropped(df=val_df, path=data_path, transform=transform, train=False, lang=hypm.lang)
     # Batch size 64 to speed up extraction
     val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=hypm.num_workers, pin_memory=True)
     
