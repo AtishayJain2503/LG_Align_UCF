@@ -72,7 +72,8 @@ def main():
         return
         
     print(f"Loading trained weights from {model_path}...")
-    model = torch.load(model_path, map_location=hypm.device)
+    from custom_models import CLIP_model # Required for pickle to un-serialize the model object
+    model = torch.load(model_path, map_location=hypm.device, weights_only=False)
     model.eval()
 
     # Load dataset
