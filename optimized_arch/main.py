@@ -234,7 +234,7 @@ def main():
         list(model.vis_L1.parameters()) + list(model.vis_L2.parameters()) +
         list(model.vis_L3.parameters()) + list(model.vis_txt_L1.parameters()) +
         list(model.vis_txt_L2.parameters()) + list(model.vis_txt_L3.parameters()) +
-        list(model.mlp_txt.parameters())   # Text-visual fusion projection (needed for fusion_mode='mlp')
+        list(model.mlp_txt.parameters()) + list(model.qformer.parameters()) 
     )
     optimizer = optim.AdamW(mlp_params, lr=1e-4, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(

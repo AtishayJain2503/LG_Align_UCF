@@ -31,7 +31,7 @@ class Configuration:
     epochs: int = 30
     lr = 0.00001
     batch_size: int = 64
-    fusion_mode: str = 'mlp'    # 'none'=vision only, 'mlp'=concat+MLP (LGAlign), 'cross_attn'=A5
+    fusion_mode: str = 'qformer'    # 'none'=vision only, 'mlp'=concat+MLP, 'qformer'=LiFtQFormer
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True
