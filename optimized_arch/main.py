@@ -147,7 +147,7 @@ def main():
     embed_dim = 512
     lr = 0.000001
     batch_size = 32
-    epochs = 100
+    epochs = 30
     expID = get_rand_id()
     loss_margin = 1
 

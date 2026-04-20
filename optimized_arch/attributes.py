@@ -28,7 +28,7 @@ class Configuration:
 
 
     # Training
-    epochs: int = 20
+    epochs: int = 30
     lr = 0.00001
     batch_size: int = 64
     fusion_mode: str = 'mlp'    # 'none'=vision only, 'mlp'=concat+MLP (LGAlign), 'cross_attn'=A5

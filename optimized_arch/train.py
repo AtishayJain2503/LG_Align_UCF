@@ -144,7 +144,7 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
             backbone_params = [p for p in list(model.query.parameters()) + list(model.ref.parameters()) if p.requires_grad]
             optimizer.add_param_group({
                 'params': backbone_params,
-                'lr': 1e-6,
+                'lr': 1e-5,
                 'weight_decay': 1e-4
             })
         
