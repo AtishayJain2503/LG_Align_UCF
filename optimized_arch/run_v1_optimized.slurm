@@ -32,15 +32,22 @@ fi
 # Activate virtual environment
 source venv/bin/activate
 
-# Upgrade pip and base tools FIRST (Ensure setuptools < 70 because newer versions deleted pkg_resources!)
-echo "Upgrading pip, setuptools, and wheel..."
-pip install --upgrade pip "setuptools<70" wheel
+# Only reinstall packages if torch is not already available (skip on re-runs)
+if ! python -c "import torch" 2>/dev/null; then
+    echo "Installing packages (first run)..."
+    # Upgrade pip FIRST on its own (old pip 21.x cannot upgrade itself + setuptools in one shot)
+    pip install --upgrade pip
+    pip install "setuptools<70" wheel
 
-# Install CLIP from GitHub using our isolated backwards-compatible tools
-echo "Installing CLIP..."
-pip install git+https://github.com/openai/CLIP.git --no-build-isolation
-echo "Installing requirements..."
-pip install -r requirements.txt
+    # Install CLIP from GitHub — do NOT use --no-build-isolation, it forces pip to use
+    # the broken system conda build tools instead of the clean venv tools we just installed
+    echo "Installing CLIP..."
+    pip install git+https://github.com/openai/CLIP.git
+    echo "Installing requirements..."
+    pip install -r requirements.txt
+else
+    echo "venv already has packages, skipping install."
+fi
 
 # Create output folders just in case
 mkdir -p logs model_weights rank info losses fig embeddings
