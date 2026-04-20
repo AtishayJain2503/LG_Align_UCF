@@ -143,6 +143,37 @@ class LiFtQFormer(nn.Module):
         return out
 
 
+class LiFtQFormerSpatial(nn.Module):
+    def __init__(self, embed_dim=768, hidden_size=1024, num_queries=4, num_layers=2):
+        super().__init__()
+        self.num_queries = num_queries
+        self.query_tokens = nn.Parameter(torch.randn(1, num_queries, embed_dim))
+        
+        self.vis_proj = nn.Linear(hidden_size, embed_dim)
+        
+        decoder_layer = nn.TransformerDecoderLayer(d_model=embed_dim, nhead=8, batch_first=True)
+        self.transformer = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
+        
+        self.out_proj = nn.Linear(embed_dim * num_queries, embed_dim)
+
+    def forward(self, vis_hidden, txt_emb):
+        B = vis_hidden.shape[0]
+        # vis_hidden: [B, seq_v, hidden_size]
+        # txt_emb: [B, embed_dim]
+        
+        v_proj = self.vis_proj(vis_hidden) # [B, seq_v, embed_dim]
+        t_proj = txt_emb.unsqueeze(1)      # [B, 1, embed_dim]
+        
+        kv = torch.cat([v_proj, t_proj], dim=1) # [B, seq_v + 1, embed_dim]
+        
+        queries = self.query_tokens.expand(B, -1, -1) # [B, num_queries, embed_dim]
+        
+        out = self.transformer(tgt=queries, memory=kv) # [B, num_queries, embed_dim]
+        
+        out = out.reshape(B, -1) # [B, num_queries * embed_dim]
+        out = self.out_proj(out) # [B, embed_dim]
+        return out
+
 # Define the Hugging face CLIP model
 class CLIP_model(nn.Module):
     def __init__(self, embed_dim):
@@ -195,6 +226,7 @@ class CLIP_model(nn.Module):
 # -------------------------------------------og---------------------------------------------------------------------------       
         self.vis_embed_shape = self.query.visual_projection.out_features
         self.txt_embed_shape = self.text.text_projection.out_features
+        self.vis_hidden_shape = self.query.vision_model.post_layernorm.normalized_shape[0]
 
 # -------------------------------------------Res50---------------------------------------------------------------------------
         # self.vis_embed_shape = 512
@@ -207,6 +239,7 @@ class CLIP_model(nn.Module):
         self.mlp_txt = nn.Linear(self.vis_embed_shape+self.txt_embed_shape, embed_dim ).to(device=self.device)
 
         self.qformer = LiFtQFormer(embed_dim=self.vis_embed_shape, num_queries=4, num_layers=2).to(device=self.device)
+        self.qformer_spatial = LiFtQFormerSpatial(embed_dim=self.vis_embed_shape, hidden_size=self.vis_hidden_shape, num_queries=4, num_layers=2).to(device=self.device)
 
         self.cross_attn = nn.MultiheadAttention(
             embed_dim=embed_dim,
@@ -256,14 +289,15 @@ class CLIP_model(nn.Module):
 
 
 
-    def get_vision_embeddings(self, imgs, isQ=True):
+    def get_vision_embeddings(self, imgs, isQ=True, return_seq=False):
         if isQ:
-            outputs = self.query(imgs)
+            outputs = self.query(imgs, output_hidden_states=return_seq)
         else:
-            outputs = self.ref(imgs)
+            outputs = self.ref(imgs, output_hidden_states=return_seq)
 
-        image_embeds = outputs.image_embeds
-        return image_embeds
+        if return_seq:
+            return outputs.image_embeds, outputs.hidden_states[-1]
+        return outputs.image_embeds
 
     def project_query(self, xq):
         """Project ground-image embeddings through the query MLP head."""
@@ -300,7 +334,13 @@ class CLIP_model(nn.Module):
 
     def encode_candidates(self, q, r, t):
         xq = self.get_vision_embeddings(imgs=q, isQ=True)
-        xr = self.get_vision_embeddings(imgs=r, isQ=False)
+        
+        return_seq = (hypm.fusion_mode == 'qformer_patch')
+        if return_seq:
+            xr_pooled, xr_seq = self.get_vision_embeddings(imgs=r, isQ=False, return_seq=True)
+            xr = (xr_pooled, xr_seq)
+        else:
+            xr = self.get_vision_embeddings(imgs=r, isQ=False)
         
         if hypm.use_neg_text:
             xt = self.get_text_embeddings(txt=t[0])
@@ -329,6 +369,22 @@ class CLIP_model(nn.Module):
 
         elif hypm.fusion_mode == 'qformer':  # LiFt-Q (Q-Former) bottleneck
             xlt = self.qformer(xr, xt)
+            xlt = self.vis_txt_L1(xlt)
+            xlt = torch.relu(xlt)
+            xlt = self.vis_txt_L2(xlt)
+            xlt = torch.relu(xlt)
+            xlt = self.vis_txt_L3(xlt)
+            
+            xq_proj = self.vis_L1(xq)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L2(xq_proj)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L3(xq_proj)
+            return xq_proj, xlt, -1
+
+        elif hypm.fusion_mode == 'qformer_patch':  # Spatial Q-Former bottleneck
+            xr_pooled, xr_seq = xr
+            xlt = self.qformer_spatial(xr_seq, xt)
             xlt = self.vis_txt_L1(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L2(xlt)

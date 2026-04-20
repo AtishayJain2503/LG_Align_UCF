@@ -234,8 +234,8 @@ def main():
         list(model.vis_L1.parameters()) + list(model.vis_L2.parameters()) +
         list(model.vis_L3.parameters()) + list(model.vis_txt_L1.parameters()) +
         list(model.vis_txt_L2.parameters()) + list(model.vis_txt_L3.parameters()) +
-        list(model.mlp_txt.parameters()) + list(model.qformer.parameters()) 
-    )
+        list(model.mlp_txt.parameters()) + list(model.qformer.parameters()) + 
+        list(model.qformer_spatial.parameters())
     optimizer = optim.AdamW(mlp_params, lr=1e-4, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=hypm.epochs, eta_min=1e-5
