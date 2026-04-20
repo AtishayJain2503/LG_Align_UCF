@@ -158,14 +158,20 @@ class CVUSA_Dataset_Eval(Dataset):
 
         if (self.is_train):
             self.T_lang = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_train-19zl.csv')
-            self.CP = pd.read_csv(f'{self.path}/streetview/crp_pos90/T1_train_c_pix_pos.csv')
+            try:
+                self.CP = pd.read_csv(f'{self.path}/streetview/crp_pos90/T1_train_c_pix_pos.csv')
+            except FileNotFoundError:
+                self.CP = None
 
             if(hypm.use_neg_text):
                 self.T_lang_neg = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_train-19zl_90_neg.csv')
 
         else:
             self.T_lang = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_val-19zl.csv')
-            self.CP = pd.read_csv(f'{self.path}/streetview/crp_pos90/T1_val_c_pix_pos.csv')
+            try:
+                self.CP = pd.read_csv(f'{self.path}/streetview/crp_pos90/T1_val_c_pix_pos.csv')
+            except FileNotFoundError:
+                self.CP = None
             if(hypm.use_neg_text):
                 self.T_lang_neg = pd.read_csv(f'{self.path}/lang/gpt-4o/{lang}_val-19zl_90_neg.csv')
 
