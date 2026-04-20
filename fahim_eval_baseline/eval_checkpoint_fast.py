@@ -5,7 +5,10 @@ import torch
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
-from main import transform
+from torchvision import transforms
+transform = transforms.Compose([
+    transforms.Resize((224, 240)),
+])
 from attributes import Configuration as hypm
 from CVUSA_dataset import CVUSA_Dataset_Eval
 from tqdm import tqdm
