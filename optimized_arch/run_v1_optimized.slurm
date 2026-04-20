@@ -8,7 +8,7 @@
 #SBATCH --partition=highgpu    # Use your cluster's high GPU partition
 #SBATCH --gpus=1               # Explicitly request 1 GPU
 #SBATCH --time=24:00:00        # Time limit
-#SBATCH --mem=32G              # Memory limit
+#SBATCH --mem=96G              # Memory limit
 
 # STOP ON ERROR: Exit script immediately if any command fails (e.g. out of memory, missing packages)
 set -e

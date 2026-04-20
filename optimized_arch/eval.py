@@ -19,7 +19,7 @@ def predict_embeddings(model, dataloader, dev=torch.device('cpu')):
     """
     model.eval()
 
-    xqs, xrs, xts, ids = [], [], [], []
+    xqs, xrs_pooled, xrs_seq, xts, ids = [], [], [], [], []
     with torch.no_grad():
         for anchor, positive, negative, txt, idx in tqdm(dataloader, total=len(dataloader), desc="ViT Feature Extraction"):
             ids.append(idx)
@@ -34,15 +34,23 @@ def predict_embeddings(model, dataloader, dev=torch.device('cpu')):
                     xt = xt_pack
 
             xqs.append(xq.cpu())
-            xrs.append(xr.cpu())
+            if hypm.fusion_mode == 'qformer_patch':
+                xrs_pooled.append(xr[0].cpu())
+                xrs_seq.append(xr[1].cpu())
+            else:
+                xrs_pooled.append(xr.cpu())
             xts.append(xt.cpu())
 
     xqs = torch.cat(xqs, dim=0)   # [N, D_vis]
-    xrs = torch.cat(xrs, dim=0)   # [N, D_vis]
+    xrs_pooled = torch.cat(xrs_pooled, dim=0)   # [N, D_vis]
+    if len(xrs_seq) > 0:
+        xrs_seq = torch.cat(xrs_seq, dim=0)
     xts = torch.cat(xts, dim=0)   # [N, D_txt]
     ids = torch.cat(ids, dim=0)
 
-    return xqs, xrs, xts, ids
+    if hypm.fusion_mode == 'qformer_patch':
+        return xqs, (xrs_pooled, xrs_seq), xts, ids
+    return xqs, xrs_pooled, xts, ids
 
 
 def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
@@ -58,7 +66,10 @@ def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
     """
     ts   = time.time()
     N    = xqs.shape[0]
-    M    = xrs.shape[0]
+    if hypm.fusion_mode == 'qformer_patch':
+        M = xrs[0].shape[0]
+    else:
+        M = xrs.shape[0]
     dev  = next(model.parameters()).device
 
     topk_ext = list(topk)
@@ -82,7 +93,12 @@ def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
         for s in range(0, M, batch_size):
             e = min(s + batch_size, M)
             with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
-                fused = model.fuse_satellite(xrs[s:e].to(dev), xts[s:e].to(dev))
+                if hypm.fusion_mode == 'qformer_patch':
+                    xr_batch = (xrs[0][s:e].to(dev), xrs[1][s:e].to(dev))
+                else:
+                    xr_batch = xrs[s:e].to(dev)
+                    
+                fused = model.fuse_satellite(xr_batch, xts[s:e].to(dev))
             xlt_list.append(F.normalize(fused.float(), p=2, dim=1).cpu())
         xlt = torch.cat(xlt_list, dim=0)           # [M, D]
 

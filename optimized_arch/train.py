@@ -140,13 +140,8 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                 param.requires_grad = True
             for param in model.ref.parameters():
                 param.requires_grad = True
-            # Add both backbones at a much lower LR than the projection heads
-            backbone_params = [p for p in list(model.query.parameters()) + list(model.ref.parameters()) if p.requires_grad]
-            optimizer.add_param_group({
-                'params': backbone_params,
-                'lr': 1e-5,
-                'weight_decay': 1e-4
-            })
+            # Activate learning rate for the tracked backbone parameter group
+            optimizer.param_groups[1]['lr'] = 1e-5
         
         if epoch >= 1 and (epoch % 3 == 0):
             hard_neg_indices = mine_hard_negatives(model, train_mining_loader, dev, top_k=10)
@@ -169,11 +164,18 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                 anchor_embedding, positive_embedding, _ = model(q = anchor, r = positive, t = txt, isTrain = True, isQuery = True)
                 
                 with torch.no_grad():
-                    hn_raw = model.get_vision_embeddings(hn_img, isQ=False)
+                    return_seq = (hypm.fusion_mode == 'qformer_patch')
+                    if return_seq:
+                        xr_pooled, xr_seq = model.get_vision_embeddings(hn_img, isQ=False, return_seq=True)
+                        hn_raw = (xr_pooled, xr_seq)
+                    else:
+                        hn_raw = model.get_vision_embeddings(hn_img, isQ=False)
+                        
                     if hypm.fusion_mode == 'none':
                         hn_emb = model.vis_txt_L3(torch.relu(model.vis_txt_L2(torch.relu(model.vis_txt_L1(hn_raw)))))
                     else:
-                        _, hn_emb, _ = model(q=anchor, r=hn_img, t=txt, isTrain=False, isQuery=True)
+                        hn_txt = model.get_text_embeddings(txt)
+                        hn_emb = model.fuse_satellite(hn_raw, hn_txt)
 
                 if(hypm.use_neg_text):
                     neg_forward = hn_emb.unsqueeze(1) 

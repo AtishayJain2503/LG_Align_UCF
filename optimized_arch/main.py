@@ -237,7 +237,12 @@ def main():
         list(model.mlp_txt.parameters()) + list(model.qformer.parameters()) + 
         list(model.qformer_spatial.parameters())
     )
-    optimizer = optim.AdamW(mlp_params, lr=1e-4, weight_decay=1e-4)
+    backbone_params = list(model.query.parameters()) + list(model.ref.parameters())
+    optimizer = optim.AdamW([
+        {'params': mlp_params, 'lr': 1e-4, 'weight_decay': 1e-4},
+        {'params': backbone_params, 'lr': 0.0, 'weight_decay': 1e-4}  # frozen initially
+    ])
+
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=hypm.epochs, eta_min=1e-5
     )

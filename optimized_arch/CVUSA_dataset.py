@@ -81,7 +81,10 @@ class CVUSA_dataset_cropped(Dataset):
             hn_image_name = self.sat_images[hn_idx]
             hn_img = Image.open(f"{self.path}/{hn_image_name}").convert('RGB')
         else:
-            hn_img = positive_img
+            # No hard negatives yet — pick a random different satellite
+            rand_idx = (item + 1 + random.randint(0, len(self.sat_images) - 2)) % len(self.sat_images)
+            hn_image_name = self.sat_images[rand_idx]
+            hn_img = Image.open(f"{self.path}/{hn_image_name}").convert('RGB')
 
         if self.transform!=None and self.is_train:
             # Joint flip (preserves cardinal direction relationship)

@@ -317,7 +317,12 @@ class CLIP_model(nn.Module):
             xlt = self.mlp_txt(xlt)             # [B, D]
         elif hypm.fusion_mode == 'qformer' and xt is not None:
             xlt = self.qformer(xr, xt)
+        elif hypm.fusion_mode == 'qformer_patch' and xt is not None:
+            xr_pooled, xr_seq = xr
+            xlt = self.qformer_spatial(xr_seq, xt)
         else:
+            if isinstance(xr, tuple):
+                xr = xr[0]
             xlt = xr
         xlt = self.vis_txt_L1(xlt)
         xlt = torch.relu(xlt)
