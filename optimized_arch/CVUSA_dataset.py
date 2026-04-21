@@ -138,6 +138,17 @@ class CVUSA_dataset_cropped(Dataset):
             positive_img = jitter(positive_img)
             hn_img = jitter(hn_img)
 
+            # CVUSA-C Robustness Stylizations (Histogram Equ, Autocontrast, Sharpness)
+            # Crucial for 90-degree FoV where loss of context makes lighting/weather shifts fatal
+            style_aug = transforms.Compose([
+                transforms.RandomAutocontrast(p=0.3),
+                transforms.RandomEqualize(p=0.3),
+                transforms.RandomAdjustSharpness(sharpness_factor=2.0, p=0.3)
+            ])
+            anchor_img = style_aug(anchor_img)
+            positive_img = style_aug(positive_img)
+            hn_img = style_aug(hn_img)
+
         # ------- Upgrade #2 + #3: FoV Crop with optional zero-padding -------
         if self.is_train and hypm.use_fov_aug:
             # random FoV between 70° and 360°
