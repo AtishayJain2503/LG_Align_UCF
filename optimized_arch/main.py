@@ -160,9 +160,9 @@ def main():
 
 
     create_folders()
-    train_loader = DataLoader(train_ds, batch_size=hypm.batch_size, shuffle=True, num_workers=8, pin_memory=True, prefetch_factor=2)
-    train_mining_loader = DataLoader(train_ds, batch_size=hypm.batch_size, shuffle=False, num_workers=8, pin_memory=True, prefetch_factor=2)
-    val_loader = DataLoader(val_ds, batch_size=hypm.batch_size, shuffle=False, num_workers=8, pin_memory=True, prefetch_factor=2)
+    train_loader = DataLoader(train_ds, batch_size=hypm.batch_size, shuffle=True, num_workers=4, pin_memory=True, prefetch_factor=2)
+    train_mining_loader = DataLoader(train_ds, batch_size=hypm.batch_size, shuffle=False, num_workers=4, pin_memory=True, prefetch_factor=2)
+    val_loader = DataLoader(val_ds, batch_size=hypm.batch_size, shuffle=False, num_workers=4, pin_memory=True, prefetch_factor=2)
     # val_loader_ref = DataLoader(val_ref, batch_size=hypm.batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
     # **********************************Only for CVUSA*****************************************
