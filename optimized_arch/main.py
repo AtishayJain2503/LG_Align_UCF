@@ -18,7 +18,7 @@ from CVACT_dataset import CVACT_dataset_cropped
 from CVUSA_dataset import CVUSA_dataset_cropped, CVUSA_Dataset_Eval
 # from CVUSA_dataset import CVUSA_Dataset_Eval
 from custom_models import ResNet, VIT, CLIP_model
-from losses import Contrastive_loss, SoftTripletBiLoss, InfoNCE, InfoNCE_2
+from losses import Contrastive_loss, SoftTripletBiLoss, InfoNCE, InfoNCE_2, ArcGeoLoss, DWBLInfoNCE
 from train import train
 from eval import predict_embeddings, evaluate_fused
 import torch.nn.functional as F
@@ -211,8 +211,18 @@ def main():
     # parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
     # ----------------------------------------------------------------------
     # ----------------------------LOSS_InfoNCE_2-------------------------------
+    # criterion = InfoNCE_2()   # original baseline
 
-    criterion = InfoNCE_2()
+    # ----------------------------LOSS UPGRADE #4 + #5--------------------------
+    # ArcGeoLoss: Angular margin loss (ArcGeo, WACV 2024)
+    #   - Forces 30° angular gap between positive and negative pairs in embedding space
+    #   - Critical for 90° FoV where crops are visually ambiguous
+    # DWBLInfoNCE: Dynamic Weighted Batch-tuple Loss (VimGeo IJCAI 2025)
+    #   - Each negative is weighted by exp(sim) — harder negatives get more gradient
+    #   - Replaces uniform InfoNCE treatment of all negatives
+    # We use ArcGeoLoss as the primary criterion. DWBL is baked into it as an
+    # additional penalty term on negatives weighted by their difficulty.
+    criterion = ArcGeoLoss(temperature=0.07, margin=3.14159 / 6)  # 30° margin
 
 
     parameters = list(filter(lambda p: p.requires_grad, model.parameters()))

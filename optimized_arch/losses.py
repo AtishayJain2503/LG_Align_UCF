@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
 import torch.distributed.nn
+import math
 
 
 
@@ -101,6 +102,142 @@ class InfoNCE_2(torch.nn.Module):
 
         return (loss_fwd + loss_rev) / 2
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Upgrade #4 — ArcGeo Angular Margin Loss (from ArcGeo, WACV 2024)
+# Forces larger angular separation in embedding space — critical for 90° FoV
+# where narrow crops create visually ambiguous embeddings.
+# Adds a cosine-margin penalty m to the positive pair angle before softmax.
+# ─────────────────────────────────────────────────────────────────────────────
+class ArcGeoLoss(torch.nn.Module):
+    """Batch-all angular margin loss (ArcGeo, WACV 2024).
+
+    For each pair (q_i, r_i), the angular margin m is subtracted from the
+    cosine similarity *angle* of the positive pair before computing softmax,
+    forcing the decision boundary to maintain a minimum angular gap.
+
+    Args:
+        temperature: logit scale denominator (default 0.07)
+        margin: additive angular margin in radians (default pi/6 = 30°)
+    """
+    def __init__(self, temperature: float = 0.07, margin: float = math.pi / 6):
+        super().__init__()
+        self.temperature = temperature
+        self.margin = margin
+
+    def forward(self, query, positive_key, negative_keys_forward, negative_keys_reverse):
+        """
+        query:                  (B, D) — ground embeddings
+        positive_key:           (B, D) — satellite embeddings
+        negative_keys_forward:  (B, N, D) — hard negative satellites
+        negative_keys_reverse:  (B, M, D) — hard negative grounds (may be empty)
+        """
+        query         = F.normalize(query,         dim=-1)
+        positive_key  = F.normalize(positive_key,  dim=-1)
+        negative_keys_forward = F.normalize(negative_keys_forward, dim=-1)
+
+        B = query.shape[0]
+        labels = torch.zeros(B, dtype=torch.long, device=query.device)
+
+        # ── Forward: Ground → Satellite ───────────────────────────────────────
+        cos_pos = F.cosine_similarity(query, positive_key, dim=-1)  # (B,)
+        # Apply angular margin: cos(theta + m)
+        theta   = torch.acos(cos_pos.clamp(-1.0 + 1e-6, 1.0 - 1e-6))
+        cos_pos_margin = torch.cos(theta + self.margin)             # (B,)
+
+        neg_sim_fwd = torch.bmm(
+            negative_keys_forward, query.unsqueeze(-1)
+        ).squeeze(-1)                                               # (B, N)
+
+        logits_fwd = torch.cat(
+            [cos_pos_margin.unsqueeze(1), neg_sim_fwd], dim=1
+        ) / self.temperature                                        # (B, 1+N)
+        loss_fwd = F.cross_entropy(logits_fwd, labels)
+
+        # ── Reverse: Satellite → Ground (skip margin for simplicity) ─────────
+        if negative_keys_reverse.shape[1] > 0:
+            negative_keys_reverse = F.normalize(negative_keys_reverse, dim=-1)
+            neg_sim_rev = torch.bmm(
+                negative_keys_reverse, positive_key.unsqueeze(-1)
+            ).squeeze(-1)                                           # (B, M)
+            logits_rev = torch.cat(
+                [cos_pos.unsqueeze(1), neg_sim_rev], dim=1
+            ) / self.temperature
+            loss_rev = F.cross_entropy(logits_rev, labels)
+            return (loss_fwd + loss_rev) / 2
+
+        return loss_fwd
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Upgrade #5 — Dynamic Weighted Batch-tuple Loss (VimGeo, IJCAI 2025 / GeoSSM)
+# Up-weights hard negatives by their cosine similarity to the query.
+# Harder negatives → higher weight → stronger gradient signal.
+# Especially effective at 90° FoV where many negatives look similar.
+# ─────────────────────────────────────────────────────────────────────────────
+class DWBLInfoNCE(torch.nn.Module):
+    """InfoNCE with Dynamic Weighted Batch-tuple Loss (VimGeo / GeoSSM, 2025).
+
+    Instead of uniform treatment, each negative's contribution is weighted by
+    exp(sim(q, n_i)) so harder negatives receive proportionally more gradient.
+
+    Can be combined with ArcGeoLoss by using this as a secondary objective,
+    or used standalone as a drop-in for InfoNCE_2.
+
+    Args:
+        temperature: logit scale denominator (default 0.07)
+    """
+    def __init__(self, temperature: float = 0.07):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(self, query, positive_key, negative_keys_forward, negative_keys_reverse):
+        """
+        Same signature as InfoNCE_2 for drop-in compatibility.
+        """
+        query         = F.normalize(query,         dim=-1)  # (B, D)
+        positive_key  = F.normalize(positive_key,  dim=-1)  # (B, D)
+        negative_keys_forward = F.normalize(negative_keys_forward, dim=-1)  # (B, N, D)
+
+        B = query.shape[0]
+        labels = torch.zeros(B, dtype=torch.long, device=query.device)
+
+        # ── Positive similarity ───────────────────────────────────────────────
+        pos_sim = F.cosine_similarity(query, positive_key, dim=-1)  # (B,)
+
+        # ── Forward: Ground → Satellite  (dynamic weighting) ─────────────────
+        neg_sim_fwd = torch.bmm(
+            negative_keys_forward, query.unsqueeze(-1)
+        ).squeeze(-1)                                               # (B, N)
+
+        # Dynamic weights: w_i = exp(sim_i) / sum(exp(sim_j))  — softmax over negatives
+        neg_weights = torch.softmax(neg_sim_fwd.detach() / self.temperature, dim=-1)  # (B, N)
+
+        logits_fwd = torch.cat(
+            [pos_sim.unsqueeze(1), neg_sim_fwd], dim=1
+        ) / self.temperature                                        # (B, 1+N)
+
+        # Weighted cross-entropy: scale log-probabilities by dynamic weights
+        log_probs_fwd = F.log_softmax(logits_fwd, dim=-1)          # (B, 1+N)
+        # Positive is at index 0; negatives at 1..N
+        loss_fwd = -log_probs_fwd[:, 0].mean()  # standard term
+        # Add weighted penalty for each hard negative exceeding threshold
+        loss_fwd = loss_fwd + (neg_weights * (-log_probs_fwd[:, 1:])).sum(dim=-1).mean() * 0.1
+
+        # ── Reverse: Satellite → Ground ───────────────────────────────────────
+        if negative_keys_reverse.shape[1] > 0:
+            negative_keys_reverse = F.normalize(negative_keys_reverse, dim=-1)
+            neg_sim_rev = torch.bmm(
+                negative_keys_reverse, positive_key.unsqueeze(-1)
+            ).squeeze(-1)
+            logits_rev = torch.cat(
+                [pos_sim.unsqueeze(1), neg_sim_rev], dim=1
+            ) / self.temperature
+            loss_rev = F.cross_entropy(logits_rev, labels)
+            return (loss_fwd + loss_rev) / 2
+
+        return loss_fwd
 
 
 # this is equivalent to the loss function in CVMNet with alpha=10, here we simplify it with cosine similarity

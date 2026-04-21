@@ -43,6 +43,12 @@ class Configuration:
     use_congeo_loss = True      # Upgrade #1: ConGeo self-supervised ground-ground loss
     congeo_weight = 0.1         # weight for ConGeo auxiliary loss
 
+    # Loss upgrades
+    use_arcgeo_loss = True      # Upgrade #4: ArcGeo angular margin loss (ArcGeo WACV 2024)
+    arcgeo_margin = 0.5236      # 30° in radians (pi/6) — angular penalty on positive pairs
+    use_dwbl = True             # Upgrade #5: Dynamic Weighted Batch-tuple Loss (VimGeo IJCAI 2025)
+
+
     # Eval
     save_vis_embed = False
     use_vis_embed = False
