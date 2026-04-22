@@ -41,7 +41,7 @@ class Configuration:
     use_fov_aug = False         # DISABLE: Train set is already pre-cropped 90° FoV
     use_zero_padding = False    # DISABLE: Only applies to full panos
     use_congeo_loss = True      # KEEP: Ground-ground self-supervision
-    congeo_weight = 0.3         # INCREASE: Stronger regularizer influence
+    congeo_weight = 0.1         # DECREASE: Keep auxiliary loss from dominating the main InfoNCE loss
 
     # Loss upgrades
     use_arcgeo_loss = False     # DISABLE: Documented cold-start collapse failure

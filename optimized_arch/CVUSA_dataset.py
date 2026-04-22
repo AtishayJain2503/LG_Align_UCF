@@ -133,8 +133,9 @@ class CVUSA_dataset_cropped(Dataset):
                 hn_img = TF.hflip(hn_img)
             
             # Independent color jitter (lighting is view-specific)
+            # Note: anchor_img jitter is skipped here because the ConGeo block applies 
+            # independent jitters to produce the two distinct anchor crops.
             jitter = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05)
-            anchor_img = jitter(anchor_img)
             positive_img = jitter(positive_img)
             hn_img = jitter(hn_img)
 

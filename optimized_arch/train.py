@@ -166,15 +166,13 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                 
                 # --- Upgrade #1: ConGeo self-supervised ground-ground loss ---
                 if hypm.use_congeo_loss:
-                    # Both anchors must pass through the exact same visual projection path
-                    # to prevent comparing a textual-fused anchor with a visual-only anchor2
-                    anchor1_proj = model.project_query(
-                        model.get_vision_embeddings(anchor, isQ=True)
-                    )
+                    # anchor is already completely encoded by model() above
+                    # and corresponds EXACTLY to the visual-only projection 
+                    # in qformer fusion_mode. No need to run ViT twice!
                     anchor2_proj = model.project_query(
                         model.get_vision_embeddings(anchor2, isQ=True)
                     )
-                    a1 = F.normalize(anchor1_proj, p=2, dim=1)
+                    a1 = F.normalize(anchor_embedding, p=2, dim=1)
                     a2 = F.normalize(anchor2_proj, p=2, dim=1)
                     logits_cg = a1 @ a2.T / 0.07
                     labels_cg = torch.arange(a1.shape[0], device=dev)
@@ -196,8 +194,8 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                     if hypm.fusion_mode == 'none':
                         hn_emb = model.vis_txt_L3(torch.relu(model.vis_txt_L2(torch.relu(model.vis_txt_L1(hn_raw)))))
                     else:
-                        hn_txt = model.get_text_embeddings(txt)
-                        hn_emb = model.fuse_satellite(hn_raw, hn_txt)
+                        # Vision-only projection for hard negative since we don't have its text
+                        hn_emb = model.fuse_satellite(hn_raw, xt=None)
 
                 if(hypm.use_neg_text):
                     neg_forward = hn_emb.unsqueeze(1) 
