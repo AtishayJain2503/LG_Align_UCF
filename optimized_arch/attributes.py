@@ -28,7 +28,7 @@ class Configuration:
 
 
     # Training
-    epochs: int = 40            # Extend runway for pure contrastive alignment
+    epochs: int = 30            # Reverted to 30 epochs to save training time
     lr = 0.00001
     batch_size: int = 64
     fusion_mode: str = 'qformer'    # Keep V2 base for V6 isolation (global token)
