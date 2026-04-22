@@ -166,11 +166,16 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                 
                 # --- Upgrade #1: ConGeo self-supervised ground-ground loss ---
                 if hypm.use_congeo_loss:
-                    anchor2_embedding = model.project_query(
+                    # Both anchors must pass through the exact same visual projection path
+                    # to prevent comparing a textual-fused anchor with a visual-only anchor2
+                    anchor1_proj = model.project_query(
+                        model.get_vision_embeddings(anchor, isQ=True)
+                    )
+                    anchor2_proj = model.project_query(
                         model.get_vision_embeddings(anchor2, isQ=True)
                     )
-                    a1 = F.normalize(anchor_embedding, p=2, dim=1)
-                    a2 = F.normalize(anchor2_embedding, p=2, dim=1)
+                    a1 = F.normalize(anchor1_proj, p=2, dim=1)
+                    a2 = F.normalize(anchor2_proj, p=2, dim=1)
                     logits_cg = a1 @ a2.T / 0.07
                     labels_cg = torch.arange(a1.shape[0], device=dev)
                     congeo_loss = (

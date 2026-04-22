@@ -152,16 +152,21 @@ class CVUSA_dataset_cropped(Dataset):
             # hn_img = style_aug(hn_img)
 
 
-        # ------- Upgrade #2 + #3: FoV Crop with optional zero-padding -------
-        if self.is_train and hypm.use_fov_aug:
-            # random FoV between 70° and 360°
-            fov1 = random.uniform(70, 360)
-            fov2 = random.uniform(70, 360)  # second crop for ConGeo loss
-            anchor_pil_1 = fov_crop_pano(anchor_img, fov_deg=fov1, zero_pad=hypm.use_zero_padding)
-            anchor_pil_2 = fov_crop_pano(anchor_img, fov_deg=fov2, zero_pad=hypm.use_zero_padding)
+        # ------- ConGeo Independent View Augmentation -------
+        # Since images are pre-cropped 90° images, we apply independent 
+        # jitters and flips instead of zero-padded FoV wraps.
+        if self.is_train and hypm.use_congeo_loss:
+            jitter = transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.05)
+            anchor_pil_1 = jitter(anchor_img)
+            if random.random() > 0.5:
+                anchor_pil_1 = TF.hflip(anchor_pil_1)
+            
+            anchor_pil_2 = jitter(anchor_img)   # generates differently randomized params
+            if random.random() > 0.5:
+                anchor_pil_2 = TF.hflip(anchor_pil_2)
         else:
             anchor_pil_1 = anchor_img
-            anchor_pil_2 = anchor_img  # same crop at eval/no-aug time
+            anchor_pil_2 = anchor_img
 
         anchor_img_1 = self.processor(images=anchor_pil_1, return_tensors="pt").pixel_values.squeeze(0)
         anchor_img_2 = self.processor(images=anchor_pil_2, return_tensors="pt").pixel_values.squeeze(0)

@@ -28,23 +28,23 @@ class Configuration:
 
 
     # Training
-    epochs: int = 30
+    epochs: int = 40            # Extend runway for pure contrastive alignment
     lr = 0.00001
     batch_size: int = 64
-    fusion_mode: str = 'qformer'    # 'none'=vision only, 'mlp'=concat+MLP, 'qformer'=LiFtQFormer
+    fusion_mode: str = 'qformer'    # Keep V2 base for V6 isolation (global token)
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True
     warmup_epochs = 2
 
     # Augmentation (ConGeo upgrades)
-    use_fov_aug = True          # Upgrade #2: random FoV crop 70°–360°
-    use_zero_padding = True     # Upgrade #3: zero-pad crop into 360° canvas before resize
-    use_congeo_loss = True      # Upgrade #1: ConGeo self-supervised ground-ground loss
-    congeo_weight = 0.1         # weight for ConGeo auxiliary loss
+    use_fov_aug = False         # DISABLE: Train set is already pre-cropped 90° FoV
+    use_zero_padding = False    # DISABLE: Only applies to full panos
+    use_congeo_loss = True      # KEEP: Ground-ground self-supervision
+    congeo_weight = 0.3         # INCREASE: Stronger regularizer influence
 
     # Loss upgrades
-    use_arcgeo_loss = True     # FIXED: Uses FP16-safe ArcFace trigonometric expansion
+    use_arcgeo_loss = False     # DISABLE: Documented cold-start collapse failure
     arcgeo_margin = 0.5236      # 30° in radians (pi/6)
     use_dwbl = False            # Keep off to cleanly isolate the ArcGeo margin gains
 
