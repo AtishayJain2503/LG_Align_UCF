@@ -140,6 +140,8 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                 param.requires_grad = True
             for param in model.ref.parameters():
                 param.requires_grad = True
+            for param in model.text.parameters():
+                param.requires_grad = True
             # Activate learning rate for the tracked backbone parameter group
             optimizer.param_groups[1]['lr'] = 1e-5
         

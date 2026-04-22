@@ -240,10 +240,9 @@ def main():
         list(model.vis_L3.parameters()) + list(model.vis_txt_L1.parameters()) +
         list(model.vis_txt_L2.parameters()) + list(model.vis_txt_L3.parameters()) +
         list(model.mlp_txt.parameters()) + list(model.qformer.parameters()) + 
-        list(model.qformer_spatial.parameters()) + 
-        list(model.text.parameters())
+        list(model.qformer_spatial.parameters())
     )
-    backbone_params = list(model.query.parameters()) + list(model.ref.parameters())
+    backbone_params = list(model.query.parameters()) + list(model.ref.parameters()) + list(model.text.parameters())
     optimizer = optim.AdamW([
         {'params': mlp_params, 'lr': 1e-4, 'weight_decay': 1e-4},
         {'params': backbone_params, 'lr': 0.0, 'weight_decay': 1e-4}  # frozen initially
