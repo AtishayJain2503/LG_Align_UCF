@@ -44,9 +44,9 @@ class Configuration:
     congeo_weight = 0.1         # weight for ConGeo auxiliary loss
 
     # Loss upgrades
-    use_arcgeo_loss = True      # Upgrade #4: ArcGeo angular margin loss (ArcGeo WACV 2024)
-    arcgeo_margin = 0.5236      # 30° in radians (pi/6) — angular penalty on positive pairs
-    use_dwbl = True             # Upgrade #5: Dynamic Weighted Batch-tuple Loss (VimGeo IJCAI 2025)
+    use_arcgeo_loss = False     # Off: Causes FP16 acos() gradient overflow during autocast
+    arcgeo_margin = 0.5236      # 30° in radians (pi/6)
+    use_dwbl = False            # Off: Reverting to safe InfoNCE_2 baseline
 
 
     # Eval

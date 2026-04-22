@@ -211,18 +211,13 @@ def main():
     # parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
     # ----------------------------------------------------------------------
     # ----------------------------LOSS_InfoNCE_2-------------------------------
-    # criterion = InfoNCE_2()   # original baseline
+    # Restored InfoNCE_2 as the primary stable baseline. (ArcGeo/DWBL caused FP16 collapse)
+    criterion = InfoNCE_2()
 
     # ----------------------------LOSS UPGRADE #4 + #5--------------------------
-    # ArcGeoLoss: Angular margin loss (ArcGeo, WACV 2024)
-    #   - Forces 30° angular gap between positive and negative pairs in embedding space
-    #   - Critical for 90° FoV where crops are visually ambiguous
-    # DWBLInfoNCE: Dynamic Weighted Batch-tuple Loss (VimGeo IJCAI 2025)
-    #   - Each negative is weighted by exp(sim) — harder negatives get more gradient
-    #   - Replaces uniform InfoNCE treatment of all negatives
-    # We use ArcGeoLoss as the primary criterion. DWBL is baked into it as an
-    # additional penalty term on negatives weighted by their difficulty.
-    criterion = ArcGeoLoss(temperature=0.07, margin=3.14159 / 6)  # 30° margin
+    if hypm.use_arcgeo_loss:
+        criterion = ArcGeoLoss(temperature=0.07, margin=3.14159 / 6)  # 30° margin
+
 
 
     parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
