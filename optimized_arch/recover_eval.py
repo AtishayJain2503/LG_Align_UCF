@@ -15,8 +15,9 @@ def recover_and_evaluate(exp_id):
     val_data= pd.read_csv(f'{data_path}/splits/val-19zl.csv', header=None).reset_index(drop=True)
     val_ds = CVUSA_dataset_cropped(df=val_data, path=data_path, transform=None, train=False, lang=hypm.lang)
     
-    # Using 4 workers to prevent memory/IO contention during rapid evaluation
-    val_loader = DataLoader(val_ds, batch_size=hypm.batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    # num_workers=0: safe for login nodes (no OpenBLAS thread limit issues)
+    # For fast eval, use Option 2: srun with --gres=gpu:1 instead
+    val_loader = DataLoader(val_ds, batch_size=hypm.batch_size, shuffle=False, num_workers=0, pin_memory=True)
     
     torch.cuda.set_device(hypm.cuda_set_device)
     model = CLIP_model(embed_dim=hypm.embed_dim)
