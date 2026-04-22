@@ -142,9 +142,16 @@ class ArcGeoLoss(torch.nn.Module):
 
         # ── Forward: Ground → Satellite ───────────────────────────────────────
         cos_pos = F.cosine_similarity(query, positive_key, dim=-1)  # (B,)
-        # Apply angular margin: cos(theta + m)
-        theta   = torch.acos(cos_pos.clamp(-1.0 + 1e-6, 1.0 - 1e-6))
-        cos_pos_margin = torch.cos(theta + self.margin)             # (B,)
+        
+        # ------------------------------------------------------------------
+        # SAFE FP16 ANGULAR MARGIN (ArcFace/ArcGeo trigonometric expansion)
+        # cos(theta + margin) = cos(theta)cos(margin) - sin(theta)sin(margin)
+        # Avoids torch.acos() which causes NaN gradients in mixed precision!
+        # ------------------------------------------------------------------
+        cos_m = math.cos(self.margin)
+        sin_m = math.sin(self.margin)
+        sin_pos = torch.sqrt((1.0 - torch.pow(cos_pos, 2)).clamp(min=1e-6))
+        cos_pos_margin = cos_pos * cos_m - sin_pos * sin_m             # (B,)
 
         neg_sim_fwd = torch.bmm(
             negative_keys_forward, query.unsqueeze(-1)

@@ -44,9 +44,10 @@ class Configuration:
     congeo_weight = 0.1         # weight for ConGeo auxiliary loss
 
     # Loss upgrades
-    use_arcgeo_loss = False     # Off: Causes FP16 acos() gradient overflow during autocast
+    use_arcgeo_loss = True     # FIXED: Uses FP16-safe ArcFace trigonometric expansion
     arcgeo_margin = 0.5236      # 30° in radians (pi/6)
-    use_dwbl = False            # Off: Reverting to safe InfoNCE_2 baseline
+    use_dwbl = False            # Keep off to cleanly isolate the ArcGeo margin gains
+
 
 
     # Eval
