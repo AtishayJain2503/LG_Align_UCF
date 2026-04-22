@@ -144,6 +144,10 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                 param.requires_grad = True
             # Activate learning rate for the tracked backbone parameter group
             optimizer.param_groups[1]['lr'] = 1e-5
+            # CRITICAL: Tell the scheduler this is the new base_lr for group 1.
+            # Without this, CosineAnnealingLR still thinks base_lr=0.0 and will
+            # overwrite lr back to ~0 on the very next scheduler.step() call.
+            scheduler.base_lrs[1] = 1e-5
         
         if epoch >= 1 and (epoch % 3 == 0):
             hard_neg_indices = mine_hard_negatives(model, train_mining_loader, dev, top_k=10)

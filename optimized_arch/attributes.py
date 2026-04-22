@@ -31,7 +31,7 @@ class Configuration:
     epochs: int = 30            # Reverted to 30 epochs to save training time
     lr = 0.00001
     batch_size: int = 64
-    fusion_mode: str = 'qformer'    # Keep V2 base for V6 isolation (global token)
+    fusion_mode: str = 'qformer_patch'  # V7: Spatial Q-Former (full patch sequence + text)
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True
