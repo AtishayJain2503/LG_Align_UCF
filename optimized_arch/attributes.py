@@ -40,7 +40,7 @@ class Configuration:
     # Augmentation (ConGeo upgrades)
     use_fov_aug = False         # DISABLE: Train set is already pre-cropped 90° FoV
     use_zero_padding = False    # DISABLE: Only applies to full panos
-    use_congeo_loss = True      # KEEP: Ground-ground self-supervision
+    use_congeo_loss = False     # V8b: OFF — testing if ConGeo helps or hurts with frozen backbone
     congeo_weight = 0.1         # DECREASE: Keep auxiliary loss from dominating the main InfoNCE loss
     unfreeze_backbone = False   # V8a: Keep backbone frozen — prevents overfitting on 35k samples
 
