@@ -55,14 +55,15 @@ def predict_embeddings(model, dataloader, dev=torch.device('cpu')):
 
 def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
     """
-    Correct O(N^2) evaluation:
+    Correct O(N^2) evaluation — matches Fahim's per-query eval logic:
       1. Project every GROUND image through query MLP head  → xq_proj [N, D]
-      2. Fuse every SATELLITE with its OWN text through sat MLP → xlt [N, D]
-         (each satellite uses xts[j], NOT the query's text)
-      3. Full cosine similarity matrix and rank each query.
+      2. For EACH query[i]:
+         - Fuse ALL satellites with query[i]'s text → xlt_i [M, D]
+         - Rank which satellite is closest to query[i]
 
-    This fixes the text-assignment bug where the old code used the query's
-    text for every satellite reference during evaluation.
+    Key insight: at inference time, you only have the QUERY's text description.
+    You don't know which satellite corresponds to which location. So each
+    satellite must be fused with the query's text, NOT its own.
     """
     ts   = time.time()
     N    = xqs.shape[0]
@@ -88,32 +89,38 @@ def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
             xq_proj_list.append(F.normalize(proj.float(), p=2, dim=1).cpu())
         xq_proj = torch.cat(xq_proj_list, dim=0)   # [N, D]
 
-        # ── Step 2: fuse ALL satellite embeddings with their OWN text ─────────
-        xlt_list = []
-        for s in range(0, M, batch_size):
-            e = min(s + batch_size, M)
-            with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
-                if hypm.fusion_mode == 'qformer_patch':
-                    xr_batch = (xrs[0][s:e].to(dev), xrs[1][s:e].to(dev))
-                else:
-                    xr_batch = xrs[s:e].to(dev)
-                    
-                fused = model.fuse_satellite(xr_batch, xts[s:e].to(dev))
-            xlt_list.append(F.normalize(fused.float(), p=2, dim=1).cpu())
-        xlt = torch.cat(xlt_list, dim=0)           # [M, D]
+        # ── Step 2: For EACH query, fuse ALL satellites with that query's text ─
+        print("Computing per-query satellite fusion + ranking...")
+        for qi in tqdm(range(N), desc="Ranking queries"):
+            # Broadcast query[qi]'s text to all satellites
+            xt_qi = xts[qi]  # [D_txt] — this single query's text embedding
 
-        # ── Step 3: chunked cosine similarity + ranking ────────────────────────
-        print("Computing similarity matrix...")
-        for s in tqdm(range(0, N, batch_size), desc="Ranking queries"):
-            e      = min(s + batch_size, N)
-            sims   = xq_proj[s:e] @ xlt.T          # [chunk, M]  — cosine (both normalised)
-            for local_i in range(sims.shape[0]):
-                global_i = s + local_i
-                gt_sim   = sims[local_i, global_i].item()
-                ranking  = (sims[local_i] > gt_sim).sum().item()
-                for j, k in enumerate(topk_ext):
-                    if ranking < k:
-                        results[j] += 1.
+            # Fuse every satellite with this query's text
+            xlt_chunks = []
+            for s in range(0, M, batch_size):
+                e = min(s + batch_size, M)
+                bs = e - s
+                # Repeat this query's text for the whole satellite batch
+                xt_batch = xt_qi.unsqueeze(0).expand(bs, -1).to(dev)
+
+                with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
+                    if hypm.fusion_mode == 'qformer_patch':
+                        xr_batch = (xrs[0][s:e].to(dev), xrs[1][s:e].to(dev))
+                    else:
+                        xr_batch = xrs[s:e].to(dev)
+
+                    fused = model.fuse_satellite(xr_batch, xt_batch)
+                xlt_chunks.append(F.normalize(fused.float(), p=2, dim=1).cpu())
+            xlt_qi = torch.cat(xlt_chunks, dim=0)  # [M, D]
+
+            # Rank: similarity of query[qi] against all fused satellites
+            sims = xq_proj[qi] @ xlt_qi.T  # [M]
+            gt_sim = sims[qi].item()
+            ranking = (sims > gt_sim).sum().item()
+
+            for j, k in enumerate(topk_ext):
+                if ranking < k:
+                    results[j] += 1.
 
     results = results / N * 100.
     print('Percentage-top1:{}, top5:{}, top10:{}, top1%:{}, time:{}'.format(
