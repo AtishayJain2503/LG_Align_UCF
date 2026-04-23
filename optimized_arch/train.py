@@ -134,7 +134,7 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
         model.train()
 
         # --- Phase 2: Unfreeze backbone at epoch 10 for joint fine-tuning ---
-        if epoch == 10:
+        if epoch == 10 and hypm.unfreeze_backbone:
             print("\n--- Phase 2: Unfreezing CLIP backbone for joint fine-tuning ---\n")
             for param in model.query.parameters():
                 param.requires_grad = True

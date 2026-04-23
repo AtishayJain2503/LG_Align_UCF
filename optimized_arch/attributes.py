@@ -31,7 +31,7 @@ class Configuration:
     epochs: int = 30            # Reverted to 30 epochs to save training time
     lr = 0.00001
     batch_size: int = 64
-    fusion_mode: str = 'qformer'  # V7c: CLS Q-Former + scheduler fix + NO ConGeo
+    fusion_mode: str = 'qformer'  # V8a: CLS Q-Former, backbone fully frozen
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True
@@ -40,8 +40,9 @@ class Configuration:
     # Augmentation (ConGeo upgrades)
     use_fov_aug = False         # DISABLE: Train set is already pre-cropped 90° FoV
     use_zero_padding = False    # DISABLE: Only applies to full panos
-    use_congeo_loss = False     # V7c: Disabled to test if ConGeo contributes to overfitting
+    use_congeo_loss = True      # KEEP: Ground-ground self-supervision
     congeo_weight = 0.1         # DECREASE: Keep auxiliary loss from dominating the main InfoNCE loss
+    unfreeze_backbone = False   # V8a: Keep backbone frozen — prevents overfitting on 35k samples
 
     # Loss upgrades
     use_arcgeo_loss = False     # DISABLE: Documented cold-start collapse failure
