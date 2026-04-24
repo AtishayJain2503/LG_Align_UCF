@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --partition=highgpu
 #SBATCH --gpus=1
-#SBATCH --time=02:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mem=64G
 
 echo "Starting V6 Recover Eval"
