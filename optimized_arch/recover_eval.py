@@ -30,12 +30,48 @@ def recover_and_evaluate(exp_id):
         
     print(f"Loading weights from {weight_path}...")
     checkpoint = torch.load(weight_path, map_location=hypm.device, weights_only=False)
-    # Handle both save formats: state_dict (new) and full model object (old)
+
     if isinstance(checkpoint, dict):
+        # New format: state_dict — load into fresh model (architectures must match)
         model.load_state_dict(checkpoint)
     else:
-        # Old format: torch.save(model, ...) — extract state_dict from loaded model
-        model.load_state_dict(checkpoint.state_dict())
+        # Old format: torch.save(model, ...) — use the loaded model directly
+        print("Detected full-model checkpoint (old format). Using loaded model directly.")
+        model = checkpoint
+        model.to(hypm.device)
+
+        # Bind eval helper methods if missing (old Fahim models don't have them)
+        if not hasattr(model, 'project_query'):
+            import types
+            def _project_query(self, xq):
+                xq = self.vis_L1(xq);  xq = torch.relu(xq)
+                xq = self.vis_L2(xq);  xq = torch.relu(xq)
+                xq = self.vis_L3(xq)
+                return xq
+            model.project_query = types.MethodType(_project_query, model)
+
+        if not hasattr(model, 'fuse_satellite'):
+            import types
+            def _fuse_satellite(self, xr, xt=None):
+                if xt is not None:
+                    xlt = torch.cat((xr, xt), dim=1)
+                    xlt = self.mlp_txt(xlt)
+                else:
+                    xlt = xr
+                xlt = self.vis_txt_L1(xlt);  xlt = torch.relu(xlt)
+                xlt = self.vis_txt_L2(xlt);  xlt = torch.relu(xlt)
+                xlt = self.vis_txt_L3(xlt)
+                return xlt
+            model.fuse_satellite = types.MethodType(_fuse_satellite, model)
+
+        if not hasattr(model, 'encode_candidates'):
+            import types
+            def _encode_candidates(self, q, r, t):
+                xq = self.get_vision_embeddings(imgs=q, isQ=True)
+                xr = self.get_vision_embeddings(imgs=r, isQ=False)
+                xt = self.get_text_embeddings(txt=t)
+                return xq, xr, xt
+            model.encode_candidates = types.MethodType(_encode_candidates, model)
     
     print("\n--- Starting Evaluation Extraction ---")
     xqs, xrs, xts, ids = predict_embeddings(model=model, dataloader=val_loader, dev=hypm.device)
