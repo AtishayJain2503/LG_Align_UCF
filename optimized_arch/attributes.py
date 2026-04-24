@@ -31,7 +31,7 @@ class Configuration:
     epochs: int = 30            # Reverted to 30 epochs to save training time
     lr = 0.00001
     batch_size: int = 64
-    fusion_mode: str = 'mlp'      # V9a: concat+MLP (proven best with corrected eval)
+    fusion_mode: str = 'flamingo' # V10a: Professor's Flamingo Gated Cross-Attention
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True

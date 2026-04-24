@@ -174,6 +174,36 @@ class LiFtQFormerSpatial(nn.Module):
         out = self.out_proj(out) # [B, embed_dim]
         return out
 
+class FlamingoGatedCrossAttention(nn.Module):
+    def __init__(self, embed_dim=768):
+        super().__init__()
+        # Cross attention where Satellite image queries the Text sequence
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim=embed_dim,
+            num_heads=8,
+            batch_first=True
+        )
+        # The key Flamingo innovation: start gate at 0 so it defaults to pure visual
+        self.gate = nn.Parameter(torch.zeros(1))
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+
+    def forward(self, v_emb, t_seq):
+        # v_emb: [B, D] (satellite pooled embedding)
+        # t_seq: [B, N, D] (text token sequence)
+        
+        # We need the query to be 3D: [B, 1, D]
+        q = v_emb.unsqueeze(1)
+        
+        # Satellite queries the Text sequence
+        attn_out, _ = self.cross_attn(query=q, key=t_seq, value=t_seq)
+        attn_out = attn_out.squeeze(1) # [B, D]
+        
+        attn_out = self.out_proj(attn_out)
+        
+        # Residual gating
+        xlt = v_emb + torch.tanh(self.gate) * attn_out
+        return xlt
+
 # Define the Hugging face CLIP model
 class CLIP_model(nn.Module):
     def __init__(self, embed_dim):
@@ -247,6 +277,8 @@ class CLIP_model(nn.Module):
             batch_first=True
         ).to(device=self.device)
         self.cross_attn_proj = nn.Linear(embed_dim, embed_dim).to(device=self.device)
+        
+        self.flamingo = FlamingoGatedCrossAttention(embed_dim=self.vis_embed_shape).to(device=self.device)
         # self.vis_gnd_L1 = nn.Linear(embed_dim, embed_dim).to(device=self.device)
         # self.txt_gnd_L1 = nn.Linear(embed_dim, embed_dim).to(device=self.device)
 
@@ -320,6 +352,9 @@ class CLIP_model(nn.Module):
         elif hypm.fusion_mode == 'qformer_patch' and xt is not None:
             xr_pooled, xr_seq = xr
             xlt = self.qformer_spatial(xr_seq, xt)
+        elif hypm.fusion_mode == 'flamingo' and xt is not None:
+            xt_pooled, xt_seq = xt
+            xlt = self.flamingo(xr, xt_seq)
         else:
             if isinstance(xr, tuple):
                 xr = xr[0]
@@ -331,10 +366,12 @@ class CLIP_model(nn.Module):
         xlt = self.vis_txt_L3(xlt)
         return xlt
     
-    def get_text_embeddings(self, txt):
+    def get_text_embeddings(self, txt, return_seq=False):
         txt = self.tokenizer(txt, padding=True, truncation=True, return_tensors="pt", max_length=77)
         txt = txt.to(device=self.device)
         outputs = self.text(**txt)
+        if return_seq:
+            return outputs.text_embeds, outputs.last_hidden_state
         return outputs.text_embeds
 
     def encode_candidates(self, q, r, t):
@@ -347,12 +384,13 @@ class CLIP_model(nn.Module):
         else:
             xr = self.get_vision_embeddings(imgs=r, isQ=False)
         
+        return_txt_seq = (hypm.fusion_mode == 'flamingo')
         if hypm.use_neg_text:
-            xt = self.get_text_embeddings(txt=t[0])
-            xt_n = self.get_text_embeddings(txt=t[1])
+            xt = self.get_text_embeddings(txt=t[0], return_seq=return_txt_seq)
+            xt_n = self.get_text_embeddings(txt=t[1], return_seq=return_txt_seq)
             return xq, xr, (xt, xt_n)
         else:
-            xt = self.get_text_embeddings(txt=t)
+            xt = self.get_text_embeddings(txt=t, return_seq=return_txt_seq)
             return xq, xr, xt
             
     def fuse_and_project(self, xq, xr, xt):
@@ -390,6 +428,22 @@ class CLIP_model(nn.Module):
         elif hypm.fusion_mode == 'qformer_patch':  # Spatial Q-Former bottleneck
             xr_pooled, xr_seq = xr
             xlt = self.qformer_spatial(xr_seq, xt)
+            xlt = self.vis_txt_L1(xlt)
+            xlt = torch.relu(xlt)
+            xlt = self.vis_txt_L2(xlt)
+            xlt = torch.relu(xlt)
+            xlt = self.vis_txt_L3(xlt)
+            
+            xq_proj = self.vis_L1(xq)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L2(xq_proj)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L3(xq_proj)
+            return xq_proj, xlt, -1
+            
+        elif hypm.fusion_mode == 'flamingo':       # Flamingo Gated Cross-Attention
+            xt_pooled, xt_seq = xt
+            xlt = self.flamingo(xr, xt_seq)
             xlt = self.vis_txt_L1(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L2(xlt)
