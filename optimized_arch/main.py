@@ -249,7 +249,7 @@ def main():
     ])
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=hypm.epochs, eta_min=1e-7
+        optimizer, T_max=hypm.epochs, eta_min=1e-6  # 100x decay from MLP lr=1e-4
     )
 
 

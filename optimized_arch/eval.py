@@ -14,12 +14,15 @@ def predict_embeddings(model, dataloader, dev=torch.device('cpu')):
     Returns:
       xqs  [N, D] - raw ground (query) ViT embeddings
       xrs  [N, D] - raw satellite (reference) ViT embeddings
-      xts  [N, D] - text embeddings for each location (paired with its satellite)
+      xts  - text embeddings: [N, D] for mlp/qformer, or (pooled [N, D], seq [N, S, D]) for flamingo
       ids  [N]    - sample IDs
     """
     model.eval()
 
-    xqs, xrs_pooled, xrs_seq, xts, ids = [], [], [], [], []
+    xqs, xrs_pooled, xrs_seq = [], [], []
+    xts_pooled, xts_seq = [], []
+    ids = []
+    
     with torch.no_grad():
         for anchor, anchor2, positive, negative, txt, idx in tqdm(dataloader, total=len(dataloader), desc="ViT Feature Extraction"):
             ids.append(idx)
@@ -34,18 +37,34 @@ def predict_embeddings(model, dataloader, dev=torch.device('cpu')):
                     xt = xt_pack
 
             xqs.append(xq.cpu())
+            
+            # Handle vision embeddings
             if hypm.fusion_mode == 'qformer_patch':
                 xrs_pooled.append(xr[0].cpu())
                 xrs_seq.append(xr[1].cpu())
             else:
                 xrs_pooled.append(xr.cpu())
-            xts.append(xt.cpu())
+            
+            # Handle text embeddings — flamingo returns (pooled, sequence) tuple
+            if hypm.fusion_mode == 'flamingo':
+                xt_p, xt_s = xt  # unpack tuple
+                xts_pooled.append(xt_p.cpu())
+                xts_seq.append(xt_s.cpu())
+            else:
+                xts_pooled.append(xt.cpu())
 
     xqs = torch.cat(xqs, dim=0)   # [N, D_vis]
     xrs_pooled = torch.cat(xrs_pooled, dim=0)   # [N, D_vis]
     if len(xrs_seq) > 0:
         xrs_seq = torch.cat(xrs_seq, dim=0)
-    xts = torch.cat(xts, dim=0)   # [N, D_txt]
+    
+    xts_pooled_cat = torch.cat(xts_pooled, dim=0)   # [N, D_txt]
+    if len(xts_seq) > 0:
+        xts_seq_cat = torch.cat(xts_seq, dim=0)     # [N, S, D_txt]
+        xts = (xts_pooled_cat, xts_seq_cat)
+    else:
+        xts = xts_pooled_cat
+    
     ids = torch.cat(ids, dim=0)
 
     if hypm.fusion_mode == 'qformer_patch':
@@ -73,6 +92,13 @@ def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
         M = xrs.shape[0]
     dev  = next(model.parameters()).device
 
+    # Unpack text embeddings for flamingo mode
+    is_flamingo = hypm.fusion_mode == 'flamingo'
+    if is_flamingo:
+        xts_pooled, xts_seq = xts  # (pooled [N,D], seq [N,S,D])
+    else:
+        xts_pooled = xts  # [N, D]
+
     topk_ext = list(topk)
     topk_ext.append(M // 100)
     results = np.zeros([len(topk_ext)])
@@ -92,22 +118,26 @@ def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
         # ── Step 2: For EACH query, fuse ALL satellites with that query's text ─
         print("Computing per-query satellite fusion + ranking...")
         for qi in tqdm(range(N), desc="Ranking queries"):
-            # Broadcast query[qi]'s text to all satellites
-            xt_qi = xts[qi]  # [D_txt] — this single query's text embedding
-
             # Fuse every satellite with this query's text
             xlt_chunks = []
             for s in range(0, M, batch_size):
                 e = min(s + batch_size, M)
                 bs = e - s
-                # Repeat this query's text for the whole satellite batch
-                xt_batch = xt_qi.unsqueeze(0).expand(bs, -1).to(dev)
 
                 with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
                     if hypm.fusion_mode == 'qformer_patch':
                         xr_batch = (xrs[0][s:e].to(dev), xrs[1][s:e].to(dev))
                     else:
                         xr_batch = xrs[s:e].to(dev)
+
+                    # Build the text batch for this query
+                    if is_flamingo:
+                        # Flamingo needs (pooled, seq) tuple
+                        xt_p_batch = xts_pooled[qi].unsqueeze(0).expand(bs, -1).to(dev)
+                        xt_s_batch = xts_seq[qi].unsqueeze(0).expand(bs, -1, -1).to(dev)
+                        xt_batch = (xt_p_batch, xt_s_batch)
+                    else:
+                        xt_batch = xts_pooled[qi].unsqueeze(0).expand(bs, -1).to(dev)
 
                     fused = model.fuse_satellite(xr_batch, xt_batch)
                 xlt_chunks.append(F.normalize(fused.float(), p=2, dim=1).cpu())
