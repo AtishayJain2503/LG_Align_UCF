@@ -279,6 +279,11 @@ class CLIP_model(nn.Module):
         self.cross_attn_proj = nn.Linear(embed_dim, embed_dim).to(device=self.device)
         
         self.flamingo = FlamingoGatedCrossAttention(embed_dim=self.vis_embed_shape).to(device=self.device)
+        
+        # V10b: Independent linear projections (professor's suggestion)
+        # xlt = W_sat @ xr + W_txt @ xt  — fully decoupled, no non-linearity in fusion
+        self.linear_proj_sat = nn.Linear(self.vis_embed_shape, embed_dim).to(device=self.device)
+        self.linear_proj_txt = nn.Linear(self.txt_embed_shape, embed_dim).to(device=self.device)
         # self.vis_gnd_L1 = nn.Linear(embed_dim, embed_dim).to(device=self.device)
         # self.txt_gnd_L1 = nn.Linear(embed_dim, embed_dim).to(device=self.device)
 
@@ -355,6 +360,8 @@ class CLIP_model(nn.Module):
         elif hypm.fusion_mode == 'flamingo' and xt is not None:
             xt_pooled, xt_seq = xt
             xlt = self.flamingo(xr, xt_seq)
+        elif hypm.fusion_mode == 'linear' and xt is not None:
+            xlt = self.linear_proj_sat(xr) + self.linear_proj_txt(xt)
         else:
             if isinstance(xr, tuple):
                 xr = xr[0]
@@ -444,6 +451,21 @@ class CLIP_model(nn.Module):
         elif hypm.fusion_mode == 'flamingo':       # Flamingo Gated Cross-Attention
             xt_pooled, xt_seq = xt
             xlt = self.flamingo(xr, xt_seq)
+            xlt = self.vis_txt_L1(xlt)
+            xlt = torch.relu(xlt)
+            xlt = self.vis_txt_L2(xlt)
+            xlt = torch.relu(xlt)
+            xlt = self.vis_txt_L3(xlt)
+            
+            xq_proj = self.vis_L1(xq)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L2(xq_proj)
+            xq_proj = torch.relu(xq_proj)
+            xq_proj = self.vis_L3(xq_proj)
+            return xq_proj, xlt, -1
+
+        elif hypm.fusion_mode == 'linear':          # V10b — Independent Linear Projections
+            xlt = self.linear_proj_sat(xr) + self.linear_proj_txt(xt)
             xlt = self.vis_txt_L1(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L2(xlt)

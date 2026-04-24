@@ -240,7 +240,8 @@ def main():
         list(model.vis_L3.parameters()) + list(model.vis_txt_L1.parameters()) +
         list(model.vis_txt_L2.parameters()) + list(model.vis_txt_L3.parameters()) +
         list(model.mlp_txt.parameters()) + list(model.qformer.parameters()) + 
-        list(model.qformer_spatial.parameters()) + list(model.flamingo.parameters())
+        list(model.qformer_spatial.parameters()) + list(model.flamingo.parameters()) +
+        list(model.linear_proj_sat.parameters()) + list(model.linear_proj_txt.parameters())
     )
     backbone_params = list(model.query.parameters()) + list(model.ref.parameters()) + list(model.text.parameters())
     optimizer = optim.AdamW([
