@@ -32,8 +32,14 @@ def recover_and_evaluate(exp_id):
     checkpoint = torch.load(weight_path, map_location=hypm.device, weights_only=False)
 
     if isinstance(checkpoint, dict):
-        # New format: state_dict — load into fresh model (architectures must match)
-        model.load_state_dict(checkpoint)
+        # New format: state_dict — load with strict=False to handle architecture changes
+        result = model.load_state_dict(checkpoint, strict=False)
+        if result.missing_keys:
+            print(f"  [WARN] Missing keys (unused modules, ok): {len(result.missing_keys)} keys")
+            for k in result.missing_keys[:5]:
+                print(f"    - {k}")
+        if result.unexpected_keys:
+            print(f"  [WARN] Unexpected keys (old arch, ok): {len(result.unexpected_keys)} keys")
     else:
         # Old format: torch.save(model, ...) — use the loaded model directly
         print("Detected full-model checkpoint (old format). Using loaded model directly.")
