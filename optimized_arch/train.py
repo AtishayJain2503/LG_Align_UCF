@@ -189,28 +189,28 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
                 else:
                     congeo_loss = 0.0
                 
+                with torch.no_grad():
+                    return_seq = (hypm.fusion_mode == 'qformer_patch')
+                    if return_seq:
+                        xr_pooled, xr_seq = model.get_vision_embeddings(hn_img, isQ=False, return_seq=True)
+                        hn_raw = (xr_pooled, xr_seq)
+                    else:
+                        hn_raw = model.get_vision_embeddings(hn_img, isQ=False)
+                        
+                    if hypm.fusion_mode == 'none':
+                        hn_emb = model.vis_txt_L3(torch.relu(model.vis_txt_L2(torch.relu(model.vis_txt_L1(hn_raw)))))
+                    else:
+                        # Vision-only abstraction for hard negative since we don't have its text
+                        hn_emb = model.fuse_satellite(hn_raw, xt=None)
+
                 if(hypm.use_neg_text):
-                    with torch.no_grad():
-                        return_seq = (hypm.fusion_mode == 'qformer_patch')
-                        if return_seq:
-                            xr_pooled, xr_seq = model.get_vision_embeddings(hn_img, isQ=False, return_seq=True)
-                            hn_raw = (xr_pooled, xr_seq)
-                        else:
-                            hn_raw = model.get_vision_embeddings(hn_img, isQ=False)
-                            
-                        if hypm.fusion_mode == 'none':
-                            hn_emb = model.vis_txt_L3(torch.relu(model.vis_txt_L2(torch.relu(model.vis_txt_L1(hn_raw)))))
-                        else:
-                            # We don't have hard negative text yet, so this falls back to vision-only.
-                            # Careful: this causes distribution shift in MLP mode!
-                            hn_emb = model.fuse_satellite(hn_raw, xt=None)
-                
                     neg_forward = hn_emb.unsqueeze(1) 
                     neg_reverse = torch.empty((hn_emb.shape[0], 0, hn_emb.shape[-1]), device=dev) # No reverse distractors
                 else:
-                    # Clean baseline: Standard in-batch negatives only, no mined vision-only hard negatives.
-                    # This avoids the dimensional mismatch with MLP fusion highlighted in Issue #2.
-                    neg_forward, neg_reverse = create_neg_keys_2(A=anchor_embedding, P=positive_embedding)
+                    if train_loader.dataset.hard_neg_indices is not None:
+                        neg_forward, neg_reverse = create_neg_keys_3(A=anchor_embedding, P=positive_embedding, NN=hn_emb)
+                    else:
+                        neg_forward, neg_reverse = create_neg_keys_2(A=anchor_embedding, P=positive_embedding)
 
                 loss = criterion(query=anchor_embedding, positive_key=positive_embedding, negative_keys_forward=neg_forward, negative_keys_reverse=neg_reverse)
                 loss = loss + hypm.congeo_weight * congeo_loss
