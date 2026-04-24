@@ -29,7 +29,13 @@ def recover_and_evaluate(exp_id):
         return
         
     print(f"Loading weights from {weight_path}...")
-    model.load_state_dict(torch.load(weight_path, map_location=hypm.device))
+    checkpoint = torch.load(weight_path, map_location=hypm.device, weights_only=False)
+    # Handle both save formats: state_dict (new) and full model object (old)
+    if isinstance(checkpoint, dict):
+        model.load_state_dict(checkpoint)
+    else:
+        # Old format: torch.save(model, ...) — extract state_dict from loaded model
+        model.load_state_dict(checkpoint.state_dict())
     
     print("\n--- Starting Evaluation Extraction ---")
     xqs, xrs, xts, ids = predict_embeddings(model=model, dataloader=val_loader, dev=hypm.device)
