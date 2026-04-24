@@ -56,8 +56,10 @@ def recover_and_evaluate(exp_id):
                 return xq
             model.project_query = types.MethodType(_project_query, model)
 
-        if not hasattr(model, 'fuse_satellite'):
+        # Override fuse_satellite if model lacks qformer (old arch used concat+MLP)
+        if not hasattr(model, 'qformer'):
             import types
+            print("  [INFO] No qformer found — binding concat+MLP fuse_satellite")
             def _fuse_satellite(self, xr, xt=None):
                 if xt is not None:
                     xlt = torch.cat((xr, xt), dim=1)
