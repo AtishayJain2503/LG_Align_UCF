@@ -167,10 +167,13 @@ class CVUSA_dataset_cropped(Dataset):
                 anchor_pil_2 = TF.hflip(anchor_pil_2)
         else:
             anchor_pil_1 = anchor_img
-            anchor_pil_2 = anchor_img
 
         anchor_img_1 = self.processor(images=anchor_pil_1, return_tensors="pt").pixel_values.squeeze(0)
-        anchor_img_2 = self.processor(images=anchor_pil_2, return_tensors="pt").pixel_values.squeeze(0)
+        
+        if self.is_train and hypm.use_congeo_loss:
+            anchor_img_2 = self.processor(images=anchor_pil_2, return_tensors="pt").pixel_values.squeeze(0)
+        else:
+            anchor_img_2 = anchor_img_1
         positive_img = self.processor(images=positive_img, return_tensors="pt").pixel_values.squeeze(0)
         negative_img = self.processor(images=hn_img, return_tensors="pt").pixel_values.squeeze(0)
 
