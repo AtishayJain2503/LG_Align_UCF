@@ -16,7 +16,6 @@ def recover_and_evaluate(exp_id):
     val_ds = CVUSA_dataset_cropped(df=val_data, path=data_path, transform=None, train=False, lang=hypm.lang)
     
     # num_workers=0: safe for login nodes (no OpenBLAS thread limit issues)
-    # For fast eval, use Option 2: srun with --gres=gpu:1 instead
     val_loader = DataLoader(val_ds, batch_size=hypm.batch_size, shuffle=False, num_workers=0, pin_memory=True)
     
     torch.cuda.set_device(hypm.cuda_set_device)
@@ -45,50 +44,14 @@ def recover_and_evaluate(exp_id):
         print("Detected full-model checkpoint (old format). Using loaded model directly.")
         model = checkpoint
         model.to(hypm.device)
-
-        # Bind eval helper methods if missing (old Fahim models don't have them)
-        if not hasattr(model, 'project_query'):
-            import types
-            def _project_query(self, xq):
-                xq = self.vis_L1(xq);  xq = torch.relu(xq)
-                xq = self.vis_L2(xq);  xq = torch.relu(xq)
-                xq = self.vis_L3(xq)
-                return xq
-            model.project_query = types.MethodType(_project_query, model)
-
-        # Override fuse_satellite if model lacks qformer (old arch used concat+MLP)
-        if not hasattr(model, 'qformer'):
-            import types
-            print("  [INFO] No qformer found — binding concat+MLP fuse_satellite")
-            def _fuse_satellite(self, xr, xt=None):
-                if xt is not None:
-                    xlt = torch.cat((xr, xt), dim=1)
-                    xlt = self.mlp_txt(xlt)
-                else:
-                    xlt = xr
-                xlt = self.vis_txt_L1(xlt);  xlt = torch.relu(xlt)
-                xlt = self.vis_txt_L2(xlt);  xlt = torch.relu(xlt)
-                xlt = self.vis_txt_L3(xlt)
-                return xlt
-            model.fuse_satellite = types.MethodType(_fuse_satellite, model)
-
-        if not hasattr(model, 'encode_candidates'):
-            import types
-            def _encode_candidates(self, q, r, t):
-                xq = self.get_vision_embeddings(imgs=q, isQ=True)
-                xr = self.get_vision_embeddings(imgs=r, isQ=False)
-                xt = self.get_text_embeddings(txt=t)
-                return xq, xr, xt
-            model.encode_candidates = types.MethodType(_encode_candidates, model)
     
-    print("\n--- Starting Evaluation Extraction ---")
-    xqs, xrs, xts, ids = predict_embeddings(model=model, dataloader=val_loader, dev=hypm.device)
+    print("\n--- Starting Evaluation ---")
+    query_features, ref_features, ids = predict_embeddings(model=model, dataloader=val_loader, dev=hypm.device)
     
-    print("\n--- Running Target Ranking ---")
-    # Using batch size 64 for fused eval array routing
-    results = evaluate_fused(model, xqs=xqs, xrs=xrs, xts=xts, topk=[1, 5, 10], batch_size=64)
+    print("\n--- Computing Recall ---")
+    results = evaluate_fused(query_features=query_features, ref_features=ref_features, topk=[1, 5, 10])
     print("\n--- METRICS RECOVERED SUCCESSFULLY ---")
-    print(f"R@1: {results[0]}, R@5: {results[1]}, R@10: {results[2]}")
+    print(f"R@1: {results[0]:.2f}, R@5: {results[1]:.2f}, R@10: {results[2]:.2f}, R@1%: {results[3]:.2f}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
