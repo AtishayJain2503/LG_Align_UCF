@@ -311,22 +311,6 @@ def main():
     # ***********************************************************************************************
 
 
-    print("\nExtract Features:")
-    # query_features, reference_features, labels = predict(model=model, dataloader=val_loader, dev=hypm.device, isQuery=True)# og
-    # reference_features, reference_labels = predict(model = model, dataloader=val_loader_ref, dev=hypm.device, isQuery=False)
-    
-    # print('TV_all Extract Features')
-    # tv_query_features, tv_reference_features, labels = predict(model=model, dataloader=tv_all_loader, dev=hypm.device, isQuery=True)
-     
-    
-
-
-    print("Compute Scores:")
-    # r1 =  calculate_scores(query_features, reference_features, query_labels, reference_labels, step_size=1000, ranks=[1, 5, 10])
-    # r1 =  accuracy(query_features=query_features, reference_features=reference_features, query_labels=labels, topk=[1, 5, 10])# og
-
-    # latlong distance_calculation
-    # r1 =  accuracy(query_features=query_features, reference_features=reference_features, query_labels=labels, topk=[1, 5, 10], tv_all_reference_features=tv_reference_features)
 
     if(hypm.save_vis_embed):
         all_gnd_embeddings = torch.cat(hypm.gnd_embed, dim=0)
@@ -341,11 +325,11 @@ def main():
 
         print(f"Saved embeddings Ground and Satelllite")
 
-    print("\nExtract Features (Decoupled ViT):")
-    xqs, xrs, xts, ids = predict_embeddings(model=model, dataloader=val_loader, dev=hypm.device)
+    print("\nExtract Features (Paired Forward Pass):")
+    query_features, ref_features, ids = predict_embeddings(model=model, dataloader=val_loader, dev=hypm.device)
     
-    print("Compute Scores (O(N^2) Evaluated in batch):")
-    r1 = evaluate_fused(model=model, xqs=xqs, xrs=xrs, xts=xts, topk=[1, 5, 10])
+    print("Compute Scores (O(N^2) matrix multiply):")
+    r1 = evaluate_fused(query_features=query_features, ref_features=ref_features, topk=[1, 5, 10])
 
     # accuracy() already converts to percentages internally
     results = r1

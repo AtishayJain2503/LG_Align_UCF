@@ -4,153 +4,94 @@ import time
 import numpy as np
 import torch.nn.functional as F
 from attributes import Configuration as hypm
-from helper_func import save_tensor, idsToDist
 from torch.amp import autocast
 
 
 def predict_embeddings(model, dataloader, dev=torch.device('cpu')):
     """
-    Extract raw ViT embeddings (before MLP) for all samples.
-    Returns:
-      xqs  [N, D] - raw ground (query) ViT embeddings
-      xrs  [N, D] - raw satellite (reference) ViT embeddings
-      xts  - text embeddings: [N, D] for mlp/qformer, or (pooled [N, D], seq [N, S, D]) for flamingo
-      ids  [N]    - sample IDs
+    Mirrors Fahim's predict() exactly.
+
+    For every sample i in the dataloader:
+        anchor   = ground image i
+        positive = satellite image i  (the CORRECT match, pre-paired in the dataset)
+        txt      = text description of ground image i  (from T1_val-19zl.csv, row i)
+
+    model() returns:
+        query_feature[i] = project(ground_i)        -- pure visual, no text
+        ref_feature[i]   = fuse(sat_i, text_i)      -- satellite enriched with ITS OWN text
+
+    The resulting ref_features gallery is STATIC -- each satellite_j is always fused
+    with text_j (its own paired ground description), NOT with any query's text.
+
+    Ranking:  similarity[i, j] = query_feature[i] . ref_feature[j]
+              Correct match is always on the diagonal (i == j).
     """
     model.eval()
+    time.sleep(0.1)
 
-    xqs, xrs_pooled, xrs_seq = [], [], []
-    xts_pooled, xts_seq = [], []
-    ids = []
-    
+    query_features_list = []
+    ref_feature_list    = []
+    ids_list            = []
+
+    print("\nExtract Features (Paired Forward Pass):")
     with torch.no_grad():
-        for anchor, anchor2, positive, negative, txt, idx in tqdm(dataloader, total=len(dataloader), desc="ViT Feature Extraction"):
-            ids.append(idx)
-            anchor, positive = anchor.to(dev), positive.to(dev)
+        bar = tqdm(dataloader, total=len(dataloader), desc="Feature Extraction")
+        for anchor, anchor2, positive, negative, txt, idx in bar:
+            ids_list.append(idx)
+            anchor   = anchor.to(dev)
+            positive = positive.to(dev)
 
             with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
-                xq, xr, xt_pack = model.encode_candidates(anchor, positive, txt)
+                # One forward pass — returns (query_emb, ref_emb, _)
+                # ref_emb = fuse(sat_i, text_i)  uses each sample's OWN paired text
+                query_feature, ref_feature, _ = model(
+                    q=anchor, r=positive, t=txt, isTrain=False, isQuery=True
+                )
 
-                if hypm.use_neg_text:
-                    xt = xt_pack[0]
-                else:
-                    xt = xt_pack
+            query_features_list.append(query_feature.float().cpu())
+            ref_feature_list.append(ref_feature.float().cpu())
 
-            xqs.append(xq.cpu())
-            
-            # Handle vision embeddings
-            if hypm.fusion_mode == 'qformer_patch':
-                xrs_pooled.append(xr[0].cpu())
-                xrs_seq.append(xr[1].cpu())
-            else:
-                xrs_pooled.append(xr.cpu())
-            
-            # Handle text embeddings — flamingo returns (pooled, sequence) tuple
-            if hypm.fusion_mode == 'flamingo':
-                xt_p, xt_s = xt  # unpack tuple
-                xts_pooled.append(xt_p.cpu())
-                xts_seq.append(xt_s.cpu())
-            else:
-                xts_pooled.append(xt.cpu())
+    query_features = torch.cat(query_features_list, dim=0)   # [N, D]
+    ref_features   = torch.cat(ref_feature_list,   dim=0)    # [N, D]
+    ids            = torch.cat(ids_list,            dim=0)    # [N]
 
-    xqs = torch.cat(xqs, dim=0)   # [N, D_vis]
-    xrs_pooled = torch.cat(xrs_pooled, dim=0)   # [N, D_vis]
-    if len(xrs_seq) > 0:
-        xrs_seq = torch.cat(xrs_seq, dim=0)
-    
-    xts_pooled_cat = torch.cat(xts_pooled, dim=0)   # [N, D_txt]
-    if len(xts_seq) > 0:
-        xts_seq_cat = torch.cat(xts_seq, dim=0)     # [N, S, D_txt]
-        xts = (xts_pooled_cat, xts_seq_cat)
-    else:
-        xts = xts_pooled_cat
-    
-    ids = torch.cat(ids, dim=0)
-
-    if hypm.fusion_mode == 'qformer_patch':
-        return xqs, (xrs_pooled, xrs_seq), xts, ids
-    return xqs, xrs_pooled, xts, ids
+    return query_features, ref_features, ids
 
 
-def evaluate_fused(model, xqs, xrs, xts, topk=[1, 5, 10], batch_size=512):
+def evaluate_fused(query_features, ref_features, topk=[1, 5, 10]):
     """
-    Correct O(N^2) evaluation — matches Fahim's per-query eval logic:
-      1. Project every GROUND image through query MLP head  → xq_proj [N, D]
-      2. For EACH query[i]:
-         - Fuse ALL satellites with query[i]'s text → xlt_i [M, D]
-         - Rank which satellite is closest to query[i]
+    Mirrors Fahim's accuracy() exactly.
 
-    Key insight: at inference time, you only have the QUERY's text description.
-    You don't know which satellite corresponds to which location. So each
-    satellite must be fused with the query's text, NOT its own.
+    Single O(N^2) matrix multiply — no per-query fusion loop.
+
+    similarity[i, j] = L2_norm(query_features[i]) . L2_norm(ref_features[j])
+                     = project(ground_i) . fuse(sat_j, text_j)
+
+    Ground-truth is always the diagonal: similarity[i, i] = project(ground_i) . fuse(sat_i, text_i)
     """
-    ts   = time.time()
-    N    = xqs.shape[0]
-    if hypm.fusion_mode == 'qformer_patch':
-        M = xrs[0].shape[0]
-    else:
-        M = xrs.shape[0]
-    dev  = next(model.parameters()).device
-
-    # Unpack text embeddings for flamingo mode
-    is_flamingo = hypm.fusion_mode == 'flamingo'
-    if is_flamingo:
-        xts_pooled, xts_seq = xts  # (pooled [N,D], seq [N,S,D])
-    else:
-        xts_pooled = xts  # [N, D]
+    ts = time.time()
+    N  = query_features.shape[0]
+    M  = ref_features.shape[0]
 
     topk_ext = list(topk)
     topk_ext.append(M // 100)
     results = np.zeros([len(topk_ext)])
 
-    model.eval()
-    with torch.no_grad():
+    # L2-normalise in fp32 for numerical stability (matches Fahim's norm)
+    q_norm = F.normalize(query_features.float(), p=2, dim=1).numpy()   # [N, D]
+    r_norm = F.normalize(ref_features.float(),   p=2, dim=1).numpy()   # [N, D]
 
-        # ── Step 1: project ALL query (ground) embeddings ─────────────────────
-        xq_proj_list = []
-        for s in range(0, N, batch_size):
-            e = min(s + batch_size, N)
-            with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
-                proj = model.project_query(xqs[s:e].to(dev))
-            xq_proj_list.append(F.normalize(proj.float(), p=2, dim=1).cpu())
-        xq_proj = torch.cat(xq_proj_list, dim=0)   # [N, D]
+    print("\nCompute Scores (O(N^2) matrix multiply):")
+    similarity = np.matmul(q_norm, r_norm.T)   # [N, N]
 
-        # ── Step 2: For EACH query, fuse ALL satellites with that query's text ─
-        print("Computing per-query satellite fusion + ranking...")
-        for qi in tqdm(range(N), desc="Ranking queries"):
-            # Fuse every satellite with this query's text
-            xlt_chunks = []
-            for s in range(0, M, batch_size):
-                e = min(s + batch_size, M)
-                bs = e - s
+    for i in range(N):
+        # Ground-truth is always at index i (diagonal) — dataset is ordered, no label lookup needed
+        gt_sim  = similarity[i, i]
+        ranking = np.sum((similarity[i, :] > gt_sim) * 1.)
 
-                with autocast(device_type='cuda', enabled=hypm.use_mixed_precision):
-                    if hypm.fusion_mode == 'qformer_patch':
-                        xr_batch = (xrs[0][s:e].to(dev), xrs[1][s:e].to(dev))
-                    else:
-                        xr_batch = xrs[s:e].to(dev)
-
-                    # Build the text batch for this query
-                    if is_flamingo:
-                        # Flamingo needs (pooled, seq) tuple
-                        xt_p_batch = xts_pooled[qi].unsqueeze(0).expand(bs, -1).to(dev)
-                        xt_s_batch = xts_seq[qi].unsqueeze(0).expand(bs, -1, -1).to(dev)
-                        xt_batch = (xt_p_batch, xt_s_batch)
-                    else:
-                        xt_batch = xts_pooled[qi].unsqueeze(0).expand(bs, -1).to(dev)
-
-                    fused = model.fuse_satellite(xr_batch, xt_batch)
-                xlt_chunks.append(F.normalize(fused.float(), p=2, dim=1).cpu())
-            xlt_qi = torch.cat(xlt_chunks, dim=0)  # [M, D]
-
-            # Rank: similarity of query[qi] against all fused satellites
-            sims = xq_proj[qi] @ xlt_qi.T  # [M]
-            gt_sim = sims[qi].item()
-            ranking = (sims > gt_sim).sum().item()
-
-            for j, k in enumerate(topk_ext):
-                if ranking < k:
-                    results[j] += 1.
+        for j, k in enumerate(topk_ext):
+            if ranking < k:
+                results[j] += 1.
 
     results = results / N * 100.
     print('Percentage-top1:{}, top5:{}, top10:{}, top1%:{}, time:{}'.format(

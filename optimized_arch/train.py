@@ -107,11 +107,9 @@ def train_step_eval(step=-1, mdl=None, dev='cpu' ):
 
 
 
-    print("\nExtract Features:")
-    xqs, xrs, xts, ids = predict_embeddings(model=mdl, dataloader=val_loader, dev=dev)
+    query_features, ref_features, ids = predict_embeddings(model=mdl, dataloader=val_loader, dev=dev)
 
-    print("Compute Scores:")
-    r1 = evaluate_fused(model=mdl, xqs=xqs, xrs=xrs, xts=xts, topk=[1, 5, 10])
+    r1 = evaluate_fused(query_features=query_features, ref_features=ref_features, topk=[1, 5, 10])
     
     write_to_file(expID=hypm.expID, msg=f'Train_eval_epoch: {step+1} => ', content=r1)
     write_to_rank_file(expID=hypm.expID, step=step, row=r1)
