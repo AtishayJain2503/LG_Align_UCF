@@ -31,7 +31,7 @@ class Configuration:
     epochs: int = 20            # Match Fahim's baseline (was 30)
     lr = 0.00001                # Match Fahim's baseline: 1e-5
     batch_size: int = 32        # Match Fahim's baseline (was 64)
-    fusion_mode: str = 'mlp'      # V9a-fix: concat+MLP with restored HN mining + eta_min=1e-6
+    fusion_mode: str = 'qformer'  # E2: Q-Former bottleneck (compare vs MLP baseline)
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True
