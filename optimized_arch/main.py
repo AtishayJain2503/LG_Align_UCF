@@ -232,26 +232,13 @@ def main():
     # print(f"Trainable Parameters: {trainable_params:,}")
     
     # ---------------------------------------------------------------
-    # 2-Phase optimizer: Phase 1 trains only MLP heads at high LR.
-    # Phase 2 (epoch 10+) adds the unfrozen backbone at low LR.
+    # Match Fahim's baseline: simple Adam on ALL params at lr=1e-5
+    # No phase scheduling, no weight decay, no cosine annealing
     # ---------------------------------------------------------------
-    mlp_params = (
-        list(model.vis_L1.parameters()) + list(model.vis_L2.parameters()) +
-        list(model.vis_L3.parameters()) + list(model.vis_txt_L1.parameters()) +
-        list(model.vis_txt_L2.parameters()) + list(model.vis_txt_L3.parameters()) +
-        list(model.mlp_txt.parameters()) + list(model.qformer.parameters()) + 
-        list(model.qformer_spatial.parameters()) + list(model.flamingo.parameters()) +
-        list(model.linear_proj_sat.parameters()) + list(model.linear_proj_txt.parameters())
-    )
-    backbone_params = list(model.query.parameters()) + list(model.ref.parameters()) + list(model.text.parameters())
-    optimizer = optim.AdamW([
-        {'params': mlp_params, 'lr': 1e-4, 'weight_decay': 1e-4},
-        {'params': backbone_params, 'lr': 0.0, 'weight_decay': 1e-4}  # frozen initially
-    ])
+    parameters = list(filter(lambda p: p.requires_grad, model.parameters()))
+    optimizer = optim.Adam(parameters, lr=hypm.lr)
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=hypm.epochs, eta_min=1e-6  # 100x decay from MLP lr=1e-4
-    )
+    scheduler = None  # Fahim doesn't use a scheduler
 
 
     hypm.eval_size = val_data.shape[0]  

@@ -28,9 +28,9 @@ class Configuration:
 
 
     # Training
-    epochs: int = 30            # Reverted to 30 epochs to save training time
-    lr = 0.00001
-    batch_size: int = 64
+    epochs: int = 20            # Match Fahim's baseline (was 30)
+    lr = 0.00001                # Match Fahim's baseline: 1e-5
+    batch_size: int = 32        # Match Fahim's baseline (was 64)
     fusion_mode: str = 'mlp'      # V9a-fix: concat+MLP with restored HN mining + eta_min=1e-6
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
@@ -42,7 +42,7 @@ class Configuration:
     use_zero_padding = False    # DISABLE: Only applies to full panos
     use_congeo_loss = False     # V9a: OFF — proven harmful (-3.6% R@1)
     congeo_weight = 0.1         # DECREASE: Keep auxiliary loss from dominating the main InfoNCE loss
-    unfreeze_backbone = True    # V9a-fix: Unfreeze at epoch 11 with scheduler fix
+    unfreeze_backbone = False    # Disabled: all params trainable from epoch 0 (Fahim baseline)
 
     # Loss upgrades
     use_arcgeo_loss = False     # DISABLE: Documented cold-start collapse failure

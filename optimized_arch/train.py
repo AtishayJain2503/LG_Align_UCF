@@ -131,21 +131,7 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
     for epoch in range(num_epochs):
         model.train()
 
-        # --- Phase 2: Unfreeze backbone at epoch 10 for joint fine-tuning ---
-        if epoch == 10 and hypm.unfreeze_backbone:
-            print("\n--- Phase 2: Unfreezing CLIP backbone for joint fine-tuning ---\n")
-            for param in model.query.parameters():
-                param.requires_grad = True
-            for param in model.ref.parameters():
-                param.requires_grad = True
-            for param in model.text.parameters():
-                param.requires_grad = True
-            # Activate learning rate for the tracked backbone parameter group
-            optimizer.param_groups[1]['lr'] = 1e-5
-            # CRITICAL: Tell the scheduler this is the new base_lr for group 1.
-            # Without this, CosineAnnealingLR still thinks base_lr=0.0 and will
-            # overwrite lr back to ~0 on the very next scheduler.step() call.
-            scheduler.base_lrs[1] = 1e-5
+        # Phase 2 unfreeze disabled — backbone is now trainable from epoch 0 (matching Fahim)
         
         if epoch >= 1 and (epoch % 3 == 0):
             hard_neg_indices = mine_hard_negatives(model, train_mining_loader, dev, top_k=10)
@@ -250,9 +236,10 @@ def train(model, criterion, optimizer, scheduler, train_loader, train_mining_loa
         all_loses.append(np.mean(running_loss))
 
         write_to_file(expID=hypm.expID, msg=f'Loss_on_epoch:{epoch+1}=>', content=np.mean(running_loss))
-        write_to_file(expID=hypm.expID, msg=f'LR_epoch:{epoch+1}=>', content=f'{scheduler.get_last_lr()[0]:.8f}')
+        write_to_file(expID=hypm.expID, msg=f'LR_epoch:{epoch+1}=>', content=f'{optimizer.param_groups[0]["lr"]:.8f}')
         
-        scheduler.step()
+        if scheduler is not None:
+            scheduler.step()
 
         # df_loss[epoch, "Loss"] = loss.cpu().detach().numpy()
         

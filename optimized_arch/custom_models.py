@@ -216,14 +216,14 @@ class CLIP_model(nn.Module):
 
 #-----------------------OG-ViT--------------------------
         self.query = getClipVisionModel()
-        # Phase 1: Freeze backbone — only MLP heads train at high LR initially
-        for param in self.query.parameters():
-            param.requires_grad = False
+        # Fahim's baseline: all backbone params trainable from epoch 0
+        # for param in self.query.parameters():
+        #     param.requires_grad = False
 
         # Separate encoder for satellite — different domain, independent fine-tuning
         self.ref = getClipVisionModel()
-        for param in self.ref.parameters():
-            param.requires_grad = False
+        # for param in self.ref.parameters():
+        #     param.requires_grad = False
 
         self.text = getClipTextModel()
         # for param in self.text.parameters():
@@ -337,11 +337,11 @@ class CLIP_model(nn.Module):
         return outputs.image_embeds
 
     def project_query(self, xq):
-        """Project ground-image embeddings through the query MLP head."""
+        """Project ground-image embeddings through the query MLP head.
+        NOTE: Fahim's code has NO relu in the query head (his relu lines
+        accidentally apply to xlt). Pure linear matches his trained behavior."""
         xq = self.vis_L1(xq)
-        xq = torch.relu(xq)
         xq = self.vis_L2(xq)
-        xq = torch.relu(xq)
         xq = self.vis_L3(xq)
         return xq
 
@@ -371,6 +371,7 @@ class CLIP_model(nn.Module):
         xlt = self.vis_txt_L2(xlt)
         xlt = torch.relu(xlt)
         xlt = self.vis_txt_L3(xlt)
+        xlt = torch.relu(xlt)   # Fahim has relu after L3 on satellite head
         return xlt
     
     def get_text_embeddings(self, txt, return_seq=False):
@@ -409,11 +410,10 @@ class CLIP_model(nn.Module):
             xlt = self.vis_txt_L2(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L3(xlt)
+            xlt = torch.relu(xlt)   # Fahim has relu after L3 on satellite
             
             xq_proj = self.vis_L1(xq)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L2(xq_proj)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L3(xq_proj)
             return xq_proj, xlt, -1
 
@@ -424,11 +424,10 @@ class CLIP_model(nn.Module):
             xlt = self.vis_txt_L2(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L3(xlt)
+            xlt = torch.relu(xlt)
             
             xq_proj = self.vis_L1(xq)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L2(xq_proj)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L3(xq_proj)
             return xq_proj, xlt, -1
 
@@ -440,11 +439,10 @@ class CLIP_model(nn.Module):
             xlt = self.vis_txt_L2(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L3(xlt)
+            xlt = torch.relu(xlt)
             
             xq_proj = self.vis_L1(xq)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L2(xq_proj)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L3(xq_proj)
             return xq_proj, xlt, -1
             
@@ -456,11 +454,10 @@ class CLIP_model(nn.Module):
             xlt = self.vis_txt_L2(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L3(xlt)
+            xlt = torch.relu(xlt)
             
             xq_proj = self.vis_L1(xq)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L2(xq_proj)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L3(xq_proj)
             return xq_proj, xlt, -1
 
@@ -471,11 +468,10 @@ class CLIP_model(nn.Module):
             xlt = self.vis_txt_L2(xlt)
             xlt = torch.relu(xlt)
             xlt = self.vis_txt_L3(xlt)
+            xlt = torch.relu(xlt)
             
             xq_proj = self.vis_L1(xq)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L2(xq_proj)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L3(xq_proj)
             return xq_proj, xlt, -1
 
@@ -488,11 +484,10 @@ class CLIP_model(nn.Module):
             xr_proj = self.vis_txt_L2(xr_proj)
             xr_proj = torch.relu(xr_proj)
             xr_proj = self.vis_txt_L3(xr_proj)
+            xr_proj = torch.relu(xr_proj)
             
             xq_proj = self.vis_L1(xq)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L2(xq_proj)
-            xq_proj = torch.relu(xq_proj)
             xq_proj = self.vis_L3(xq_proj)
             return xq_proj, xr_proj, -1
 
