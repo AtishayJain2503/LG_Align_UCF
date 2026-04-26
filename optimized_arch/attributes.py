@@ -31,7 +31,7 @@ class Configuration:
     epochs: int = 20            # Match Fahim's baseline (was 30)
     lr = 0.00001                # Match Fahim's baseline: 1e-5
     batch_size: int = 32        # Match Fahim's baseline (was 64)
-    fusion_mode: str = 'linear'  # E4: Independent linear projections (W_sat·xr + W_txt·xt)
+    fusion_mode: str = 'none'  # E5: Vision-only ablation (no text) — proves text helps
     lang_with: str = 'sat'      # fuse text with satellite embeddings
     train_eval_per_epoch = 2
     use_mixed_precision = True
