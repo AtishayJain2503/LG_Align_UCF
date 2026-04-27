@@ -170,7 +170,7 @@ def main():
     # ******************************************************************************************
 
     if hypm.save_weights:
-        os.mkdir(f'model_weights/{hypm.expID}')
+        os.makedirs(f'model_weights/{hypm.expID}', exist_ok=True)
 
     # model = ResNet(emb_dim=embed_dim).to(device)
     # model_r = ResNet(emb_dim=embed_dim).to(device)
